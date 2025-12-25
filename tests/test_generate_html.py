@@ -871,6 +871,32 @@ class TestImportGistOption:
         assert "gistpreview.github.io" in result.output
 
 
+class TestVersionOption:
+    """Tests for the --version option."""
+
+    def test_version_long_flag(self):
+        """Test that --version shows version info."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--version"])
+
+        assert result.exit_code == 0
+        assert "0.2" in result.output
+
+    def test_version_short_flag(self):
+        """Test that -v shows version info."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["-v"])
+
+        assert result.exit_code == 0
+        assert "0.2" in result.output
+
+
 class TestOpenOption:
     """Tests for the --open option."""
 
