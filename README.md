@@ -1,9 +1,9 @@
-# claude-code-publish
+# claude-code-transcripts
 
-[![PyPI](https://img.shields.io/pypi/v/claude-code-publish.svg)](https://pypi.org/project/claude-code-publish/)
-[![Changelog](https://img.shields.io/github/v/release/simonw/claude-code-publish?include_prereleases&label=changelog)](https://github.com/simonw/claude-code-publish/releases)
-[![Tests](https://github.com/simonw/claude-code-publish/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-publish/actions?query=workflow%3ATest)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-publish/blob/main/LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/claude-code-transcripts.svg)](https://pypi.org/project/claude-code-transcripts/)
+[![Changelog](https://img.shields.io/github/v/release/simonw/claude-code-transcripts?include_prereleases&label=changelog)](https://github.com/simonw/claude-code-transcripts/releases)
+[![Tests](https://github.com/simonw/claude-code-transcripts/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-transcripts/actions?query=workflow%3ATest)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-transcripts/blob/main/LICENSE)
 
 Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
 
@@ -14,11 +14,11 @@ Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML
 
 Install this tool using `uv`:
 ```bash
-uv tool install claude-code-publish
+uv tool install claude-code-transcripts
 ```
 Or run it without installing:
 ```bash
-uvx claude-code-publish --help
+uvx claude-code-transcripts --help
 ```
 
 ## Usage
@@ -34,7 +34,7 @@ There are three commands available:
 The quickest way to view a recent local session:
 
 ```bash
-claude-code-publish
+claude-code-transcripts
 ```
 
 This shows an interactive picker to select a session, generates HTML, and opens it in your default browser.
@@ -59,15 +59,15 @@ The generated output includes:
 Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:
 
 ```bash
-claude-code-publish
+claude-code-transcripts
 # or explicitly:
-claude-code-publish local
+claude-code-transcripts local
 ```
 
 Use `--limit` to control how many sessions are shown (default: 10):
 
 ```bash
-claude-code-publish local --limit 20
+claude-code-transcripts local --limit 20
 ```
 
 ### Web sessions
@@ -76,13 +76,13 @@ Import sessions directly from the Claude API:
 
 ```bash
 # Interactive session picker
-claude-code-publish web
+claude-code-transcripts web
 
 # Import a specific session by ID
-claude-code-publish web SESSION_ID
+claude-code-transcripts web SESSION_ID
 
 # Import and publish to gist
-claude-code-publish web SESSION_ID --gist
+claude-code-transcripts web SESSION_ID --gist
 ```
 
 On macOS, API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
@@ -92,8 +92,8 @@ On macOS, API credentials are automatically retrieved from your keychain (requir
 Convert a specific session file directly:
 
 ```bash
-claude-code-publish json session.json -o output-directory/
-claude-code-publish json session.jsonl --open
+claude-code-transcripts json session.json -o output-directory/
+claude-code-transcripts json session.jsonl --open
 ```
 
 When using [Claude Code for web](https://claude.ai/code) you can export your session as a `session.json` file using the `teleport` command.
@@ -104,10 +104,10 @@ Use `-a/--output-auto` to automatically create a subdirectory named after the se
 
 ```bash
 # Creates ./session_ABC123/ subdirectory
-claude-code-publish web SESSION_ABC123 -a
+claude-code-transcripts web SESSION_ABC123 -a
 
 # Creates ./transcripts/session_ABC123/ subdirectory
-claude-code-publish web SESSION_ABC123 -o ./transcripts -a
+claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
 ```
 
 ### Publishing to GitHub Gist
@@ -115,9 +115,9 @@ claude-code-publish web SESSION_ABC123 -o ./transcripts -a
 Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
 
 ```bash
-claude-code-publish --gist
-claude-code-publish web --gist
-claude-code-publish json session.json --gist
+claude-code-transcripts --gist
+claude-code-transcripts web --gist
+claude-code-transcripts json session.json --gist
 ```
 
 This will output something like:
@@ -132,7 +132,7 @@ The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to 
 Combine with `-o` to keep a local copy:
 
 ```bash
-claude-code-publish json session.json -o ./my-transcript --gist
+claude-code-transcripts json session.json -o ./my-transcript --gist
 ```
 
 **Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
@@ -142,7 +142,7 @@ claude-code-publish json session.json -o ./my-transcript --gist
 Use the `--json` option to include the original session file in the output directory:
 
 ```bash
-claude-code-publish json session.json -o ./my-transcript --json
+claude-code-transcripts json session.json -o ./my-transcript --json
 ```
 
 This will output:
@@ -156,10 +156,10 @@ This is useful for archiving the source data alongside the HTML output.
 
 To contribute to this tool, first checkout the code. You can run the tests using `uv run`:
 ```bash
-cd claude-code-publish
+cd claude-code-transcripts
 uv run pytest
 ```
 And run your local development copy of the tool like this:
 ```bash
-uv run claude-code-publish --help
+uv run claude-code-transcripts --help
 ```

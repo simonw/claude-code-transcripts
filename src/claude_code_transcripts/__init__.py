@@ -20,7 +20,7 @@ import questionary
 
 # Set up Jinja2 environment
 _jinja_env = Environment(
-    loader=PackageLoader("claude_code_publish", "templates"),
+    loader=PackageLoader("claude_code_transcripts", "templates"),
     autoescape=True,
 )
 
@@ -984,7 +984,7 @@ def generate_html(json_path, output_dir, github_repo=None):
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
-@click.version_option(None, "-v", "--version", package_name="claude-code-publish")
+@click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
 def cli():
     """Convert Claude Code session JSON to mobile-friendly HTML pages."""
     pass

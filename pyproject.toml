@@ -1,7 +1,7 @@
 [project]
-name = "claude-code-publish"
+name = "claude-code-transcripts"
 version = "0.2"
-description = "Convert a Claude Code for web session.json to HTML"
+description = "Convert Claude Code session files to HTML transcripts"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [
@@ -18,13 +18,13 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/simonw/claude-code-publish"
-Changelog = "https://github.com/simonw/claude-code-publish/releases"
-Issues = "https://github.com/simonw/claude-code-publish/issues"
-CI = "https://github.com/simonw/claude-code-publish/actions"
+Homepage = "https://github.com/simonw/claude-code-transcripts"
+Changelog = "https://github.com/simonw/claude-code-transcripts/releases"
+Issues = "https://github.com/simonw/claude-code-transcripts/issues"
+CI = "https://github.com/simonw/claude-code-transcripts/actions"
 
 [project.scripts]
-claude-code-publish = "claude_code_publish:main"
+claude-code-transcripts = "claude_code_transcripts:main"
 
 [build-system]
 requires = ["uv_build>=0.9.7,<0.10.0"]
