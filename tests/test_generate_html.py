@@ -21,6 +21,9 @@ from claude_code_publish import (
     analyze_conversation,
     format_tool_stats,
     is_tool_result_message,
+    inject_gist_preview_js,
+    create_gist,
+    GIST_PREVIEW_JS,
 )
 
 
@@ -423,3 +426,254 @@ class TestListWebCommand:
 
         assert result.exit_code != 0
         assert "must provide --token" in result.output
+
+
+class TestInjectGistPreviewJs:
+    """Tests for the inject_gist_preview_js function."""
+
+    def test_injects_js_into_html_files(self, output_dir):
+        """Test that JS is injected before </body> tag."""
+        # Create test HTML files
+        (output_dir / "index.html").write_text(
+            "<html><body><h1>Test</h1></body></html>"
+        )
+        (output_dir / "page-001.html").write_text(
+            "<html><body><p>Page 1</p></body></html>"
+        )
+
+        inject_gist_preview_js(output_dir)
+
+        index_content = (output_dir / "index.html").read_text()
+        page_content = (output_dir / "page-001.html").read_text()
+
+        # Check JS was injected
+        assert GIST_PREVIEW_JS in index_content
+        assert GIST_PREVIEW_JS in page_content
+
+        # Check JS is before </body>
+        assert index_content.endswith("</body></html>")
+        assert "<script>" in index_content
+
+    def test_skips_files_without_body(self, output_dir):
+        """Test that files without </body> are not modified."""
+        original_content = "<html><head><title>Test</title></head></html>"
+        (output_dir / "fragment.html").write_text(original_content)
+
+        inject_gist_preview_js(output_dir)
+
+        assert (output_dir / "fragment.html").read_text() == original_content
+
+    def test_handles_empty_directory(self, output_dir):
+        """Test that empty directories don't cause errors."""
+        inject_gist_preview_js(output_dir)
+        # Should complete without error
+
+
+class TestCreateGist:
+    """Tests for the create_gist function."""
+
+    def test_creates_gist_successfully(self, output_dir, monkeypatch):
+        """Test successful gist creation."""
+        import subprocess
+        import click
+
+        # Create test HTML files
+        (output_dir / "index.html").write_text("<html><body>Index</body></html>")
+        (output_dir / "page-001.html").write_text("<html><body>Page</body></html>")
+
+        # Mock subprocess.run to simulate successful gh gist create
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/abc123def456\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        gist_id, gist_url = create_gist(output_dir)
+
+        assert gist_id == "abc123def456"
+        assert gist_url == "https://gist.github.com/testuser/abc123def456"
+
+    def test_raises_on_no_html_files(self, output_dir):
+        """Test that error is raised when no HTML files exist."""
+        import click
+
+        with pytest.raises(click.ClickException) as exc_info:
+            create_gist(output_dir)
+
+        assert "No HTML files found" in str(exc_info.value)
+
+    def test_raises_on_gh_cli_error(self, output_dir, monkeypatch):
+        """Test that error is raised when gh CLI fails."""
+        import subprocess
+        import click
+
+        # Create test HTML file
+        (output_dir / "index.html").write_text("<html><body>Test</body></html>")
+
+        # Mock subprocess.run to simulate gh error
+        def mock_run(*args, **kwargs):
+            raise subprocess.CalledProcessError(
+                returncode=1,
+                cmd=["gh", "gist", "create"],
+                stderr="error: Not logged in",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        with pytest.raises(click.ClickException) as exc_info:
+            create_gist(output_dir)
+
+        assert "Failed to create gist" in str(exc_info.value)
+
+    def test_raises_on_gh_not_found(self, output_dir, monkeypatch):
+        """Test that error is raised when gh CLI is not installed."""
+        import subprocess
+        import click
+
+        # Create test HTML file
+        (output_dir / "index.html").write_text("<html><body>Test</body></html>")
+
+        # Mock subprocess.run to simulate gh not found
+        def mock_run(*args, **kwargs):
+            raise FileNotFoundError()
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        with pytest.raises(click.ClickException) as exc_info:
+            create_gist(output_dir)
+
+        assert "gh CLI not found" in str(exc_info.value)
+
+
+class TestSessionGistOption:
+    """Tests for the session command --gist option."""
+
+    def test_session_gist_creates_gist(self, monkeypatch, tmp_path):
+        """Test that session --gist creates a gist."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import subprocess
+
+        # Create sample session file
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        # Mock subprocess.run for gh gist create
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/abc123\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        # Mock tempfile.gettempdir to use our tmp_path
+        monkeypatch.setattr("claude_code_publish.tempfile.gettempdir", lambda: str(tmp_path))
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["session", str(fixture_path), "--gist"],
+        )
+
+        assert result.exit_code == 0
+        assert "Creating GitHub gist" in result.output
+        assert "gist.github.com" in result.output
+        assert "gistpreview.github.io" in result.output
+
+    def test_session_gist_with_output_dir(self, monkeypatch, output_dir):
+        """Test that session --gist with -o uses specified directory."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import subprocess
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        # Mock subprocess.run for gh gist create
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/abc123\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["session", str(fixture_path), "-o", str(output_dir), "--gist"],
+        )
+
+        assert result.exit_code == 0
+        assert (output_dir / "index.html").exists()
+        # Verify JS was injected
+        index_content = (output_dir / "index.html").read_text()
+        assert "gistpreview.github.io" in index_content
+
+
+class TestImportGistOption:
+    """Tests for the import command --gist option."""
+
+    def test_import_gist_creates_gist(self, httpx_mock, monkeypatch, tmp_path):
+        """Test that import --gist creates a gist."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import subprocess
+
+        # Load sample session to mock API response
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        with open(fixture_path) as f:
+            session_data = json.load(f)
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
+            json=session_data,
+        )
+
+        # Mock subprocess.run for gh gist create
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/def456\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        # Mock tempfile.gettempdir
+        monkeypatch.setattr("claude_code_publish.tempfile.gettempdir", lambda: str(tmp_path))
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "import",
+                "test-session-id",
+                "--token",
+                "test-token",
+                "--org-uuid",
+                "test-org",
+                "--gist",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Creating GitHub gist" in result.output
+        assert "gist.github.com" in result.output
+        assert "gistpreview.github.io" in result.output

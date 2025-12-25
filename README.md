@@ -39,6 +39,52 @@ This will generate:
 
 - `-o, --output DIRECTORY` - output directory (default: current directory)
 - `--repo OWNER/NAME` - GitHub repo for commit links (auto-detected from git push output if not specified)
+- `--gist` - upload the generated HTML files to a GitHub Gist and output a preview URL
+
+### Publishing to GitHub Gist
+
+Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
+
+```bash
+claude-code-publish session.json --gist
+```
+
+This will output something like:
+```
+Gist: https://gist.github.com/username/abc123def456
+Preview: https://gistpreview.github.io/?abc123def456/index.html
+Files: /var/folders/.../session-id
+```
+
+The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gistpreview.
+
+When using `--gist` without `-o`, files are written to a temporary directory (shown in the output). You can combine both options to keep a local copy:
+
+```bash
+claude-code-publish session.json -o ./my-transcript --gist
+```
+
+**Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
+
+## Importing from Claude API
+
+You can import sessions directly from the Claude API without needing to export a `session.json` file:
+
+```bash
+# List available sessions
+claude-code-publish list-web
+
+# Import a specific session
+claude-code-publish import SESSION_ID -o output-directory/
+
+# Import with interactive session picker
+claude-code-publish import
+
+# Import and publish to gist
+claude-code-publish import SESSION_ID --gist
+```
+
+On macOS, the API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
 
 ## Development
 

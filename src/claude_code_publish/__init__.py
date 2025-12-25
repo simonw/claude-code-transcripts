@@ -6,6 +6,7 @@ import os
 import platform
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 import click
@@ -609,6 +610,79 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
 });
 """
 
+# JavaScript to fix relative URLs when served via gistpreview.github.io
+GIST_PREVIEW_JS = r"""
+(function() {
+    if (window.location.hostname !== 'gistpreview.github.io') return;
+    // URL format: https://gistpreview.github.io/?GIST_ID/filename.html
+    var match = window.location.search.match(/^\?([^/]+)/);
+    if (!match) return;
+    var gistId = match[1];
+    document.querySelectorAll('a[href]').forEach(function(link) {
+        var href = link.getAttribute('href');
+        // Skip external links and anchors
+        if (href.startsWith('http') || href.startsWith('#') || href.startsWith('//')) return;
+        // Handle anchor in relative URL (e.g., page-001.html#msg-123)
+        var parts = href.split('#');
+        var filename = parts[0];
+        var anchor = parts.length > 1 ? '#' + parts[1] : '';
+        link.setAttribute('href', '?' + gistId + '/' + filename + anchor);
+    });
+})();
+"""
+
+
+def inject_gist_preview_js(output_dir):
+    """Inject gist preview JavaScript into all HTML files in the output directory."""
+    output_dir = Path(output_dir)
+    for html_file in output_dir.glob("*.html"):
+        content = html_file.read_text()
+        # Insert the gist preview JS before the closing </body> tag
+        if "</body>" in content:
+            content = content.replace(
+                "</body>",
+                f"<script>{GIST_PREVIEW_JS}</script>\n</body>"
+            )
+            html_file.write_text(content)
+
+
+def create_gist(output_dir, public=False):
+    """Create a GitHub gist from the HTML files in output_dir.
+
+    Returns the gist ID on success, or raises click.ClickException on failure.
+    """
+    output_dir = Path(output_dir)
+    html_files = list(output_dir.glob("*.html"))
+    if not html_files:
+        raise click.ClickException("No HTML files found to upload to gist.")
+
+    # Build the gh gist create command
+    # gh gist create file1 file2 ... --public/--private
+    cmd = ["gh", "gist", "create"]
+    cmd.extend(str(f) for f in sorted(html_files))
+    if public:
+        cmd.append("--public")
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        # Output is the gist URL, e.g., https://gist.github.com/username/GIST_ID
+        gist_url = result.stdout.strip()
+        # Extract gist ID from URL
+        gist_id = gist_url.rstrip("/").split("/")[-1]
+        return gist_id, gist_url
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.strip() if e.stderr else str(e)
+        raise click.ClickException(f"Failed to create gist: {error_msg}")
+    except FileNotFoundError:
+        raise click.ClickException(
+            "gh CLI not found. Install it from https://cli.github.com/ and run 'gh auth login'."
+        )
+
 
 def generate_pagination_html(current_page, total_pages):
     if total_pages <= 1:
@@ -845,17 +919,41 @@ def cli():
 @click.option(
     "-o",
     "--output",
-    default=".",
     type=click.Path(),
-    help="Output directory (default: current directory)",
+    help="Output directory (default: current directory, or temp dir with --gist)",
 )
 @click.option(
     "--repo",
     help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
 )
-def session(json_file, output, repo):
+@click.option(
+    "--gist",
+    is_flag=True,
+    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+)
+def session(json_file, output, repo, gist):
     """Convert a Claude Code session JSON file to HTML."""
+    # Determine output directory
+    if gist and output is None:
+        # Extract session ID from JSON file for temp directory name
+        with open(json_file, "r") as f:
+            data = json.load(f)
+        session_id = data.get("sessionId", Path(json_file).stem)
+        output = Path(tempfile.gettempdir()) / session_id
+    elif output is None:
+        output = "."
+
     generate_html(json_file, output, github_repo=repo)
+
+    if gist:
+        # Inject gist preview JS and create gist
+        inject_gist_preview_js(output)
+        click.echo("Creating GitHub gist...")
+        gist_id, gist_url = create_gist(output)
+        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        click.echo(f"Gist: {gist_url}")
+        click.echo(f"Preview: {preview_url}")
+        click.echo(f"Files: {output}")
 
 
 def resolve_credentials(token, org_uuid):
@@ -1120,7 +1218,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: creates folder with session ID)",
+    help="Output directory (default: creates folder with session ID, or temp dir with --gist)",
 )
 @click.option("--token", help="API access token (auto-detected from keychain on macOS)")
 @click.option(
@@ -1130,7 +1228,12 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "--repo",
     help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
 )
-def import_session(session_id, output, token, org_uuid, repo):
+@click.option(
+    "--gist",
+    is_flag=True,
+    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+)
+def import_session(session_id, output, token, org_uuid, repo, gist):
     """Import a session from the Claude API and convert to HTML.
 
     If SESSION_ID is not provided, displays an interactive picker to select a session.
@@ -1190,12 +1293,25 @@ def import_session(session_id, output, token, org_uuid, repo):
         raise click.ClickException(f"Network error: {e}")
 
     # Determine output directory
-    if output is None:
+    if gist and output is None:
+        output = Path(tempfile.gettempdir()) / session_id
+    elif output is None:
         output = session_id
 
     click.echo(f"Generating HTML in {output}/...")
     generate_html_from_session_data(session_data, output, github_repo=repo)
-    click.echo(f"Done! Open {output}/index.html to view.")
+
+    if gist:
+        # Inject gist preview JS and create gist
+        inject_gist_preview_js(output)
+        click.echo("Creating GitHub gist...")
+        gist_id, gist_url = create_gist(output)
+        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        click.echo(f"Gist: {gist_url}")
+        click.echo(f"Preview: {preview_url}")
+        click.echo(f"Files: {output}")
+    else:
+        click.echo(f"Done! Open {output}/index.html to view.")
 
 
 def main():
