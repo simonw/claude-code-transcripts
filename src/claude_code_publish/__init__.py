@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import webbrowser
 from pathlib import Path
 
 import click
@@ -931,7 +932,7 @@ def cli():
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: current directory, or temp dir with --gist)",
+    help="Output directory (default: current directory, or temp dir with --gist/--open)",
 )
 @click.option(
     "--repo",
@@ -948,10 +949,16 @@ def cli():
     is_flag=True,
     help="Include the original JSON session file in the output directory.",
 )
-def session(json_file, output, repo, gist, include_json):
+@click.option(
+    "--open",
+    "open_browser",
+    is_flag=True,
+    help="Open the generated index.html in your default browser.",
+)
+def session(json_file, output, repo, gist, include_json, open_browser):
     """Convert a Claude Code session JSON file to HTML."""
     # Determine output directory
-    if gist and output is None:
+    if (gist or open_browser) and output is None:
         # Extract session ID from JSON file for temp directory name
         with open(json_file, "r") as f:
             data = json.load(f)
@@ -981,6 +988,10 @@ def session(json_file, output, repo, gist, include_json):
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
         click.echo(f"Files: {output}")
+
+    if open_browser:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
 
 
 def resolve_credentials(token, org_uuid):
@@ -1256,7 +1267,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: creates folder with session ID, or temp dir with --gist)",
+    help="Output directory (default: creates folder with session ID, or temp dir with --gist/--open)",
 )
 @click.option("--token", help="API access token (auto-detected from keychain on macOS)")
 @click.option(
@@ -1277,7 +1288,15 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Include the JSON session data in the output directory.",
 )
-def import_session(session_id, output, token, org_uuid, repo, gist, include_json):
+@click.option(
+    "--open",
+    "open_browser",
+    is_flag=True,
+    help="Open the generated index.html in your default browser.",
+)
+def import_session(
+    session_id, output, token, org_uuid, repo, gist, include_json, open_browser
+):
     """Import a session from the Claude API and convert to HTML.
 
     If SESSION_ID is not provided, displays an interactive picker to select a session.
@@ -1337,7 +1356,7 @@ def import_session(session_id, output, token, org_uuid, repo, gist, include_json
         raise click.ClickException(f"Network error: {e}")
 
     # Determine output directory
-    if gist and output is None:
+    if (gist or open_browser) and output is None:
         output = Path(tempfile.gettempdir()) / session_id
     elif output is None:
         output = session_id
@@ -1364,8 +1383,10 @@ def import_session(session_id, output, token, org_uuid, repo, gist, include_json
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
         click.echo(f"Files: {output}")
-    else:
-        click.echo(f"Done! Open {output}/index.html to view.")
+
+    if open_browser:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
 
 
 def main():

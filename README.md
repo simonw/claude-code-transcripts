@@ -27,6 +27,16 @@ When using [Claude Code for web](https://claude.ai/code) you can export your ses
 
 This tool converts that JSON into a browseable multi-page HTML transcript.
 
+The quickest way to view a recent session is to import it directly and open in your browser:
+
+```bash
+claude-code-publish import --open
+```
+
+This shows an interactive picker to select a session, generates HTML, and opens it in your default browser.
+
+For a local session file:
+
 ```bash
 claude-code-publish session.json -o output-directory/
 ```
@@ -39,6 +49,7 @@ This will generate:
 
 - `-o, --output DIRECTORY` - output directory (default: current directory)
 - `--repo OWNER/NAME` - GitHub repo for commit links (auto-detected from git push output if not specified)
+- `--open` - open the generated `index.html` in your default browser
 - `--gist` - upload the generated HTML files to a GitHub Gist and output a preview URL
 - `--json` - include the original JSON session file in the output directory
 

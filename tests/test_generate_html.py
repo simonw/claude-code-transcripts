@@ -869,3 +869,79 @@ class TestImportGistOption:
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
         assert "gistpreview.github.io" in result.output
+
+
+class TestOpenOption:
+    """Tests for the --open option."""
+
+    def test_session_open_calls_webbrowser(self, output_dir, monkeypatch):
+        """Test that session --open opens the browser."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        # Track webbrowser.open calls
+        opened_urls = []
+
+        def mock_open(url):
+            opened_urls.append(url)
+            return True
+
+        monkeypatch.setattr("claude_code_publish.webbrowser.open", mock_open)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["session", str(fixture_path), "-o", str(output_dir), "--open"],
+        )
+
+        assert result.exit_code == 0
+        assert len(opened_urls) == 1
+        assert "index.html" in opened_urls[0]
+        assert opened_urls[0].startswith("file://")
+
+    def test_import_open_calls_webbrowser(self, httpx_mock, output_dir, monkeypatch):
+        """Test that import --open opens the browser."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        # Load sample session to mock API response
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        with open(fixture_path) as f:
+            session_data = json.load(f)
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
+            json=session_data,
+        )
+
+        # Track webbrowser.open calls
+        opened_urls = []
+
+        def mock_open(url):
+            opened_urls.append(url)
+            return True
+
+        monkeypatch.setattr("claude_code_publish.webbrowser.open", mock_open)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "import",
+                "test-session-id",
+                "--token",
+                "test-token",
+                "--org-uuid",
+                "test-org",
+                "-o",
+                str(output_dir),
+                "--open",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert len(opened_urls) == 1
+        assert "index.html" in opened_urls[0]
+        assert opened_urls[0].startswith("file://")
