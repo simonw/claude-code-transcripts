@@ -331,3 +331,95 @@ class TestIsToolResultMessage:
         """Test rejection of empty content."""
         assert is_tool_result_message({"content": []}) is False
         assert is_tool_result_message({"content": "string"}) is False
+
+
+class TestListWebCommand:
+    """Tests for the list-web command."""
+
+    def test_list_web_displays_sessions(self, httpx_mock):
+        """Test that list-web displays sessions from the API."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        # Mock the API response with realistic data
+        mock_response = {
+            "data": [
+                {
+                    "id": "session_01ABC123",
+                    "title": "Build a CLI tool",
+                    "created_at": "2025-12-24T10:30:00Z",
+                    "updated_at": "2025-12-24T11:00:00Z",
+                    "type": "web",
+                    "session_status": "completed",
+                    "environment_id": "env_123",
+                    "session_context": {},
+                },
+                {
+                    "id": "session_02DEF456",
+                    "title": "Fix authentication bug",
+                    "created_at": "2025-12-23T14:00:00Z",
+                    "updated_at": "2025-12-23T15:30:00Z",
+                    "type": "web",
+                    "session_status": "completed",
+                    "environment_id": "env_123",
+                    "session_context": {},
+                },
+            ],
+            "has_more": False,
+            "first_id": "session_01ABC123",
+            "last_id": "session_02DEF456",
+        }
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/sessions",
+            json=mock_response,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["list-web", "--token", "test-token", "--org-uuid", "test-org-uuid"],
+        )
+
+        assert result.exit_code == 0
+        assert "session_01ABC123" in result.output
+        assert "session_02DEF456" in result.output
+        assert "Build a CLI tool" in result.output
+        assert "Fix authentication bug" in result.output
+        assert "2025-12-24T10:30:00" in result.output
+
+    def test_list_web_no_sessions(self, httpx_mock):
+        """Test list-web when no sessions are found."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/sessions",
+            json={"data": [], "has_more": False},
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["list-web", "--token", "test-token", "--org-uuid", "test-org-uuid"],
+        )
+
+        assert result.exit_code == 0
+        assert "No sessions found" in result.output
+
+    def test_list_web_requires_token_on_non_macos(self, monkeypatch):
+        """Test that list-web requires --token on non-macOS platforms."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        # Pretend we're on Linux
+        monkeypatch.setattr("claude_code_publish.platform.system", lambda: "Linux")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["list-web", "--org-uuid", "test-org-uuid"],
+        )
+
+        assert result.exit_code != 0
+        assert "must provide --token" in result.output

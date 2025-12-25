@@ -2,12 +2,17 @@
 
 import json
 import html
+import os
+import platform
 import re
+import subprocess
 from pathlib import Path
 
 import click
 from click_default_group import DefaultGroup
+import httpx
 import markdown
+import questionary
 
 # Regex to match git commit output: [branch hash] message
 COMMIT_PATTERN = re.compile(r"\[[\w\-/]+ ([a-f0-9]{7,})\] (.+?)(?:\n|$)")
@@ -24,6 +29,104 @@ LONG_TEXT_THRESHOLD = (
 
 # Module-level variable for GitHub repo (set by generate_html)
 _github_repo = None
+
+# API constants
+API_BASE_URL = "https://api.anthropic.com/v1"
+ANTHROPIC_VERSION = "2023-06-01"
+
+
+class CredentialsError(Exception):
+    """Raised when credentials cannot be obtained."""
+
+    pass
+
+
+def get_access_token_from_keychain():
+    """Get access token from macOS keychain.
+
+    Returns the access token or None if not found.
+    Raises CredentialsError with helpful message on failure.
+    """
+    if platform.system() != "Darwin":
+        return None
+
+    try:
+        result = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-a",
+                os.environ.get("USER", ""),
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return None
+
+        # Parse the JSON to get the access token
+        creds = json.loads(result.stdout.strip())
+        return creds.get("claudeAiOauth", {}).get("accessToken")
+    except (json.JSONDecodeError, subprocess.SubprocessError):
+        return None
+
+
+def get_org_uuid_from_config():
+    """Get organization UUID from ~/.claude.json.
+
+    Returns the organization UUID or None if not found.
+    """
+    config_path = Path.home() / ".claude.json"
+    if not config_path.exists():
+        return None
+
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        return config.get("oauthAccount", {}).get("organizationUuid")
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def get_api_headers(token, org_uuid):
+    """Build API request headers."""
+    return {
+        "Authorization": f"Bearer {token}",
+        "anthropic-version": ANTHROPIC_VERSION,
+        "Content-Type": "application/json",
+        "x-organization-uuid": org_uuid,
+    }
+
+
+def fetch_sessions(token, org_uuid):
+    """Fetch list of sessions from the API.
+
+    Returns the sessions data as a dict.
+    Raises httpx.HTTPError on network/API errors.
+    """
+    headers = get_api_headers(token, org_uuid)
+    response = httpx.get(f"{API_BASE_URL}/sessions", headers=headers, timeout=30.0)
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_session(token, org_uuid, session_id):
+    """Fetch a specific session from the API.
+
+    Returns the session data as a dict.
+    Raises httpx.HTTPError on network/API errors.
+    """
+    headers = get_api_headers(token, org_uuid)
+    response = httpx.get(
+        f"{API_BASE_URL}/session_ingress/session/{session_id}",
+        headers=headers,
+        timeout=60.0,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def detect_github_repo(loglines):
@@ -753,6 +856,346 @@ def cli():
 def session(json_file, output, repo):
     """Convert a Claude Code session JSON file to HTML."""
     generate_html(json_file, output, github_repo=repo)
+
+
+def resolve_credentials(token, org_uuid):
+    """Resolve token and org_uuid from arguments or auto-detect.
+
+    Returns (token, org_uuid) tuple.
+    Raises click.ClickException if credentials cannot be resolved.
+    """
+    # Get token
+    if token is None:
+        token = get_access_token_from_keychain()
+        if token is None:
+            if platform.system() == "Darwin":
+                raise click.ClickException(
+                    "Could not retrieve access token from macOS keychain. "
+                    "Make sure you are logged into Claude Code, or provide --token."
+                )
+            else:
+                raise click.ClickException(
+                    "On non-macOS platforms, you must provide --token with your access token."
+                )
+
+    # Get org UUID
+    if org_uuid is None:
+        org_uuid = get_org_uuid_from_config()
+        if org_uuid is None:
+            raise click.ClickException(
+                "Could not find organization UUID in ~/.claude.json. "
+                "Provide --org-uuid with your organization UUID."
+            )
+
+    return token, org_uuid
+
+
+def format_session_for_display(session_data):
+    """Format a session for display in the list or picker.
+
+    Returns a formatted string.
+    """
+    session_id = session_data.get("id", "unknown")
+    title = session_data.get("title", "Untitled")
+    created_at = session_data.get("created_at", "")
+    # Truncate title if too long
+    if len(title) > 60:
+        title = title[:57] + "..."
+    return f"{session_id}  {created_at[:19] if created_at else 'N/A':19}  {title}"
+
+
+@cli.command("list-web")
+@click.option("--token", help="API access token (auto-detected from keychain on macOS)")
+@click.option(
+    "--org-uuid", help="Organization UUID (auto-detected from ~/.claude.json)"
+)
+def list_web(token, org_uuid):
+    """List available sessions from the Claude API."""
+    try:
+        token, org_uuid = resolve_credentials(token, org_uuid)
+    except click.ClickException:
+        raise
+
+    try:
+        sessions_data = fetch_sessions(token, org_uuid)
+    except httpx.HTTPStatusError as e:
+        raise click.ClickException(
+            f"API request failed: {e.response.status_code} {e.response.text}"
+        )
+    except httpx.RequestError as e:
+        raise click.ClickException(f"Network error: {e}")
+
+    sessions = sessions_data.get("data", [])
+    if not sessions:
+        click.echo("No sessions found.")
+        return
+
+    # Print header
+    click.echo(f"{'Session ID':<35}  {'Created':<19}  Name")
+    click.echo("-" * 80)
+
+    for session_data in sessions:
+        click.echo(format_session_for_display(session_data))
+
+
+def generate_html_from_session_data(session_data, output_dir, github_repo=None):
+    """Generate HTML from session data dict (instead of file path)."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    loglines = session_data.get("loglines", [])
+
+    # Auto-detect GitHub repo if not provided
+    if github_repo is None:
+        github_repo = detect_github_repo(loglines)
+        if github_repo:
+            click.echo(f"Auto-detected GitHub repo: {github_repo}")
+
+    # Set module-level variable for render functions
+    global _github_repo
+    _github_repo = github_repo
+
+    conversations = []
+    current_conv = None
+    for entry in loglines:
+        log_type = entry.get("type")
+        timestamp = entry.get("timestamp", "")
+        is_compact_summary = entry.get("isCompactSummary", False)
+        message_data = entry.get("message", {})
+        if not message_data:
+            continue
+        # Convert message dict to JSON string for compatibility with existing render functions
+        message_json = json.dumps(message_data)
+        is_user_prompt = False
+        user_text = None
+        if log_type == "user":
+            content = message_data.get("content", "")
+            if isinstance(content, str) and content.strip():
+                is_user_prompt = True
+                user_text = content
+        if is_user_prompt:
+            if current_conv:
+                conversations.append(current_conv)
+            current_conv = {
+                "user_text": user_text,
+                "timestamp": timestamp,
+                "messages": [(log_type, message_json, timestamp)],
+                "is_continuation": bool(is_compact_summary),
+            }
+        elif current_conv:
+            current_conv["messages"].append((log_type, message_json, timestamp))
+    if current_conv:
+        conversations.append(current_conv)
+
+    total_convs = len(conversations)
+    total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
+
+    for page_num in range(1, total_pages + 1):
+        start_idx = (page_num - 1) * PROMPTS_PER_PAGE
+        end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
+        page_convs = conversations[start_idx:end_idx]
+        messages_html = []
+        for conv in page_convs:
+            is_first = True
+            for log_type, message_json, timestamp in conv["messages"]:
+                msg_html = render_message(log_type, message_json, timestamp)
+                if msg_html:
+                    # Wrap continuation summaries in collapsed details
+                    if is_first and conv.get("is_continuation"):
+                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
+                    messages_html.append(msg_html)
+                is_first = False
+        pagination_html = generate_pagination_html(page_num, total_pages)
+        page_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code transcript - page {page_num}</title>
+    <style>{CSS}</style>
+</head>
+<body>
+    <div class="container">
+        <h1><a href="index.html" style="color: inherit; text-decoration: none;">Claude Code transcript</a> - page {page_num}/{total_pages}</h1>
+        {pagination_html}
+        {''.join(messages_html)}
+        {pagination_html}
+    </div>
+    <script>{JS}</script>
+</body>
+</html>"""
+        (output_dir / f"page-{page_num:03d}.html").write_text(page_content)
+        click.echo(f"Generated page-{page_num:03d}.html")
+
+    # Calculate overall stats and collect all commits for timeline
+    total_tool_counts = {}
+    total_messages = 0
+    all_commits = []  # (timestamp, hash, message, page_num, conv_index)
+    for i, conv in enumerate(conversations):
+        total_messages += len(conv["messages"])
+        stats = analyze_conversation(conv["messages"])
+        for tool, count in stats["tool_counts"].items():
+            total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
+        page_num = (i // PROMPTS_PER_PAGE) + 1
+        for commit_hash, commit_msg, commit_ts in stats["commits"]:
+            all_commits.append((commit_ts, commit_hash, commit_msg, page_num, i))
+    total_tool_calls = sum(total_tool_counts.values())
+    total_commits = len(all_commits)
+
+    # Build timeline items: prompts and commits merged by timestamp
+    timeline_items = []
+
+    # Add prompts
+    prompt_num = 0
+    for i, conv in enumerate(conversations):
+        if conv.get("is_continuation"):
+            continue
+        if conv["user_text"].startswith("Stop hook feedback:"):
+            continue
+        prompt_num += 1
+        page_num = (i // PROMPTS_PER_PAGE) + 1
+        msg_id = make_msg_id(conv["timestamp"])
+        link = f"page-{page_num:03d}.html#{msg_id}"
+        rendered_content = render_markdown_text(conv["user_text"])
+
+        # Analyze conversation for stats (excluding commits from inline display now)
+        stats = analyze_conversation(conv["messages"])
+        tool_stats_str = format_tool_stats(stats["tool_counts"])
+
+        stats_html = ""
+        if tool_stats_str or stats["long_texts"]:
+            long_texts_html = ""
+            for lt in stats["long_texts"]:
+                rendered_lt = render_markdown_text(lt)
+                long_texts_html += f'<div class="index-item-long-text"><div class="truncatable"><div class="truncatable-content"><div class="index-item-long-text-content">{rendered_lt}</div></div><button class="expand-btn">Show more</button></div></div>'
+
+            stats_line = f"<span>{tool_stats_str}</span>" if tool_stats_str else ""
+            stats_html = (
+                f'<div class="index-item-stats">{stats_line}{long_texts_html}</div>'
+            )
+
+        item_html = f'<div class="index-item"><a href="{html.escape(link)}"><div class="index-item-header"><span class="index-item-number">#{prompt_num}</span><time datetime="{html.escape(conv["timestamp"])}" data-timestamp="{html.escape(conv["timestamp"])}">{html.escape(conv["timestamp"])}</time></div><div class="index-item-content">{rendered_content}</div></a>{stats_html}</div>'
+        timeline_items.append((conv["timestamp"], "prompt", item_html))
+
+    # Add commits as separate timeline items
+    for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
+        if _github_repo:
+            github_link = f"https://github.com/{_github_repo}/commit/{commit_hash}"
+            item_html = f"""<div class="index-commit"><a href="{github_link}"><div class="index-commit-header"><span class="index-commit-hash">{commit_hash[:7]}</span><time datetime="{html.escape(commit_ts)}" data-timestamp="{html.escape(commit_ts)}">{html.escape(commit_ts)}</time></div><div class="index-commit-msg">{html.escape(commit_msg)}</div></a></div>"""
+        else:
+            item_html = f"""<div class="index-commit"><div class="index-commit-header"><span class="index-commit-hash">{commit_hash[:7]}</span><time datetime="{html.escape(commit_ts)}" data-timestamp="{html.escape(commit_ts)}">{html.escape(commit_ts)}</time></div><div class="index-commit-msg">{html.escape(commit_msg)}</div></div>"""
+        timeline_items.append((commit_ts, "commit", item_html))
+
+    # Sort by timestamp
+    timeline_items.sort(key=lambda x: x[0])
+    index_items = [item[2] for item in timeline_items]
+
+    index_pagination = generate_index_pagination_html(total_pages)
+    index_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code transcript - Index</title>
+    <style>{CSS}</style>
+</head>
+<body>
+    <div class="container">
+        <h1>Claude Code transcript</h1>
+        {index_pagination}
+        <p style="color: var(--text-muted); margin-bottom: 24px;">{prompt_num} prompts · {total_messages} messages · {total_tool_calls} tool calls · {total_commits} commits · {total_pages} pages</p>
+        {''.join(index_items)}
+        {index_pagination}
+    </div>
+    <script>{JS}</script>
+</body>
+</html>"""
+    (output_dir / "index.html").write_text(index_content)
+    click.echo(f"Generated index.html ({total_convs} prompts, {total_pages} pages)")
+
+
+@cli.command("import")
+@click.argument("session_id", required=False)
+@click.option(
+    "-o",
+    "--output",
+    type=click.Path(),
+    help="Output directory (default: creates folder with session ID)",
+)
+@click.option("--token", help="API access token (auto-detected from keychain on macOS)")
+@click.option(
+    "--org-uuid", help="Organization UUID (auto-detected from ~/.claude.json)"
+)
+@click.option(
+    "--repo",
+    help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
+)
+def import_session(session_id, output, token, org_uuid, repo):
+    """Import a session from the Claude API and convert to HTML.
+
+    If SESSION_ID is not provided, displays an interactive picker to select a session.
+    """
+    try:
+        token, org_uuid = resolve_credentials(token, org_uuid)
+    except click.ClickException:
+        raise
+
+    # If no session ID provided, show interactive picker
+    if session_id is None:
+        try:
+            sessions_data = fetch_sessions(token, org_uuid)
+        except httpx.HTTPStatusError as e:
+            raise click.ClickException(
+                f"API request failed: {e.response.status_code} {e.response.text}"
+            )
+        except httpx.RequestError as e:
+            raise click.ClickException(f"Network error: {e}")
+
+        sessions = sessions_data.get("data", [])
+        if not sessions:
+            raise click.ClickException("No sessions found.")
+
+        # Build choices for questionary
+        choices = []
+        for s in sessions:
+            sid = s.get("id", "unknown")
+            title = s.get("title", "Untitled")
+            created_at = s.get("created_at", "")
+            # Truncate title if too long
+            if len(title) > 50:
+                title = title[:47] + "..."
+            display = f"{created_at[:19] if created_at else 'N/A':19}  {title}"
+            choices.append(questionary.Choice(title=display, value=sid))
+
+        selected = questionary.select(
+            "Select a session to import:",
+            choices=choices,
+        ).ask()
+
+        if selected is None:
+            # User cancelled
+            raise click.ClickException("No session selected.")
+
+        session_id = selected
+
+    # Fetch the session
+    click.echo(f"Fetching session {session_id}...")
+    try:
+        session_data = fetch_session(token, org_uuid, session_id)
+    except httpx.HTTPStatusError as e:
+        raise click.ClickException(
+            f"API request failed: {e.response.status_code} {e.response.text}"
+        )
+    except httpx.RequestError as e:
+        raise click.ClickException(f"Network error: {e}")
+
+    # Determine output directory
+    if output is None:
+        output = session_id
+
+    click.echo(f"Generating HTML in {output}/...")
+    generate_html_from_session_data(session_data, output, github_repo=repo)
+    click.echo(f"Done! Open {output}/index.html to view.")
 
 
 def main():
