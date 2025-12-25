@@ -43,13 +43,21 @@ This will generate:
 
 ### Publishing to GitHub Gist
 
-Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
+Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL.
+
+If you use that with the `import` command with no other options you can directly select a session to publish to a Gist:
+
+```bash
+claude-code-publish import --gist
+```
+The `--gist` option is available for other commands too:
 
 ```bash
 claude-code-publish session.json --gist
+claude-code-publish import session_01BU6ZZoB7zTHrh9DAspF5hj --gist
 ```
 
-This will output something like:
+Each of these will output something like:
 ```
 Gist: https://gist.github.com/username/abc123def456
 Preview: https://gistpreview.github.io/?abc123def456/index.html
