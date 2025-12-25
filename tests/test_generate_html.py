@@ -339,98 +339,6 @@ class TestIsToolResultMessage:
         assert is_tool_result_message({"content": "string"}) is False
 
 
-class TestListWebCommand:
-    """Tests for the list-web command."""
-
-    def test_list_web_displays_sessions(self, httpx_mock):
-        """Test that list-web displays sessions from the API."""
-        from click.testing import CliRunner
-        from claude_code_publish import cli
-
-        # Mock the API response with realistic data
-        mock_response = {
-            "data": [
-                {
-                    "id": "session_01ABC123",
-                    "title": "Build a CLI tool",
-                    "created_at": "2025-12-24T10:30:00Z",
-                    "updated_at": "2025-12-24T11:00:00Z",
-                    "type": "web",
-                    "session_status": "completed",
-                    "environment_id": "env_123",
-                    "session_context": {},
-                },
-                {
-                    "id": "session_02DEF456",
-                    "title": "Fix authentication bug",
-                    "created_at": "2025-12-23T14:00:00Z",
-                    "updated_at": "2025-12-23T15:30:00Z",
-                    "type": "web",
-                    "session_status": "completed",
-                    "environment_id": "env_123",
-                    "session_context": {},
-                },
-            ],
-            "has_more": False,
-            "first_id": "session_01ABC123",
-            "last_id": "session_02DEF456",
-        }
-
-        httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/sessions",
-            json=mock_response,
-        )
-
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["list-web", "--token", "test-token", "--org-uuid", "test-org-uuid"],
-        )
-
-        assert result.exit_code == 0
-        assert "session_01ABC123" in result.output
-        assert "session_02DEF456" in result.output
-        assert "Build a CLI tool" in result.output
-        assert "Fix authentication bug" in result.output
-        assert "2025-12-24T10:30:00" in result.output
-
-    def test_list_web_no_sessions(self, httpx_mock):
-        """Test list-web when no sessions are found."""
-        from click.testing import CliRunner
-        from claude_code_publish import cli
-
-        httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/sessions",
-            json={"data": [], "has_more": False},
-        )
-
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["list-web", "--token", "test-token", "--org-uuid", "test-org-uuid"],
-        )
-
-        assert result.exit_code == 0
-        assert "No sessions found" in result.output
-
-    def test_list_web_requires_token_on_non_macos(self, monkeypatch):
-        """Test that list-web requires --token on non-macOS platforms."""
-        from click.testing import CliRunner
-        from claude_code_publish import cli
-
-        # Pretend we're on Linux
-        monkeypatch.setattr("claude_code_publish.platform.system", lambda: "Linux")
-
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["list-web", "--org-uuid", "test-org-uuid"],
-        )
-
-        assert result.exit_code != 0
-        assert "must provide --token" in result.output
-
-
 class TestInjectGistPreviewJs:
     """Tests for the inject_gist_preview_js function."""
 
@@ -587,7 +495,7 @@ class TestSessionGistOption:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["session", str(fixture_path), "--gist"],
+            ["json", str(fixture_path), "--gist"],
         )
 
         assert result.exit_code == 0
@@ -619,7 +527,7 @@ class TestSessionGistOption:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["session", str(fixture_path), "-o", str(output_dir), "--gist"],
+            ["json", str(fixture_path), "-o", str(output_dir), "--gist"],
         )
 
         assert result.exit_code == 0
@@ -743,7 +651,7 @@ class TestSessionJsonOption:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["session", str(fixture_path), "-o", str(output_dir), "--json"],
+            ["json", str(fixture_path), "-o", str(output_dir), "--json"],
         )
 
         assert result.exit_code == 0
@@ -762,7 +670,7 @@ class TestSessionJsonOption:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["session", str(fixture_path), "-o", str(output_dir), "--json"],
+            ["json", str(fixture_path), "-o", str(output_dir), "--json"],
         )
 
         assert result.exit_code == 0
@@ -793,7 +701,7 @@ class TestImportJsonOption:
         result = runner.invoke(
             cli,
             [
-                "import",
+                "web",
                 "test-session-id",
                 "--token",
                 "test-token",
@@ -858,7 +766,7 @@ class TestImportGistOption:
         result = runner.invoke(
             cli,
             [
-                "import",
+                "web",
                 "test-session-id",
                 "--token",
                 "test-token",
@@ -926,7 +834,7 @@ class TestOpenOption:
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["session", str(fixture_path), "-o", str(output_dir), "--open"],
+            ["json", str(fixture_path), "-o", str(output_dir), "--open"],
         )
 
         assert result.exit_code == 0
@@ -962,7 +870,7 @@ class TestOpenOption:
         result = runner.invoke(
             cli,
             [
-                "import",
+                "web",
                 "test-session-id",
                 "--token",
                 "test-token",
@@ -1179,10 +1087,11 @@ class TestFindLocalSessions:
 class TestLocalSessionCLI:
     """Tests for CLI behavior with local sessions."""
 
-    def test_list_local_shows_sessions(self, tmp_path, monkeypatch):
-        """Test that 'list-local' command shows local sessions."""
+    def test_local_shows_sessions_and_converts(self, tmp_path, monkeypatch):
+        """Test that 'local' command shows sessions and converts selected one."""
         from click.testing import CliRunner
         from claude_code_publish import cli
+        import questionary
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1197,16 +1106,28 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
+        # Mock questionary.select to return the session file
+        class MockSelect:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def ask(self):
+                return session_file
+
+        monkeypatch.setattr(questionary, "select", MockSelect)
+
         runner = CliRunner()
-        result = runner.invoke(cli, ["list-local"])
+        result = runner.invoke(cli, ["local"])
 
         assert result.exit_code == 0
-        assert "Test local session" in result.output
+        assert "Loading local sessions" in result.output
+        assert "Generated" in result.output
 
-    def test_no_args_lists_local_sessions(self, tmp_path, monkeypatch):
-        """Test that running with no arguments lists local sessions."""
+    def test_no_args_runs_local_command(self, tmp_path, monkeypatch):
+        """Test that running with no arguments runs local command."""
         from click.testing import CliRunner
         from claude_code_publish import cli
+        import questionary
 
         # Create mock .claude/projects structure
         projects_dir = tmp_path / ".claude" / "projects" / "test-project"
@@ -1221,8 +1142,53 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
+        # Mock questionary.select to return the session file
+        class MockSelect:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def ask(self):
+                return session_file
+
+        monkeypatch.setattr(questionary, "select", MockSelect)
+
         runner = CliRunner()
         result = runner.invoke(cli, [])
 
         assert result.exit_code == 0
-        assert "Test default session" in result.output
+        assert "Loading local sessions" in result.output
+
+    def test_local_handles_cancelled_selection(self, tmp_path, monkeypatch):
+        """Test that local command handles cancelled selection gracefully."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import questionary
+
+        # Create mock .claude/projects structure
+        projects_dir = tmp_path / ".claude" / "projects" / "test-project"
+        projects_dir.mkdir(parents=True)
+
+        session_file = projects_dir / "session-123.jsonl"
+        session_file.write_text(
+            '{"type":"summary","summary":"Test session"}\n'
+            '{"type":"user","timestamp":"2025-01-01T00:00:00Z","message":{"role":"user","content":"Hello"}}\n'
+        )
+
+        # Mock Path.home() to return our tmp_path
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        # Mock questionary.select to return None (cancelled)
+        class MockSelect:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def ask(self):
+                return None
+
+        monkeypatch.setattr(questionary, "select", MockSelect)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["local"])
+
+        assert result.exit_code == 0
+        assert "No session selected" in result.output
