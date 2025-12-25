@@ -1082,7 +1082,13 @@ def cli():
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: temp dir, or '.' with -o .)",
+    help="Output directory. If not specified, writes to temp dir and opens in browser.",
+)
+@click.option(
+    "-a",
+    "--output-auto",
+    is_flag=True,
+    help="Auto-name output subdirectory based on session filename (uses -o as parent, or current dir).",
 )
 @click.option(
     "--repo",
@@ -1103,14 +1109,14 @@ def cli():
     "--open",
     "open_browser",
     is_flag=True,
-    help="Open the generated index.html in your default browser.",
+    help="Open the generated index.html in your default browser (default if no -o specified).",
 )
 @click.option(
     "--limit",
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, repo, gist, include_json, open_browser, limit):
+def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
     """Select and convert a local Claude Code session to HTML."""
     from datetime import datetime
 
@@ -1152,14 +1158,21 @@ def local_cmd(output, repo, gist, include_json, open_browser, limit):
 
     session_file = selected
 
-    # Determine output directory
-    if (gist or open_browser) and output is None:
-        output = Path(tempfile.gettempdir()) / session_file.stem
+    # Determine output directory and whether to open browser
+    # If no -o specified, use temp dir and open browser by default
+    auto_open = output is None and not gist and not output_auto
+    if output_auto:
+        # Use -o as parent dir (or current dir), with auto-named subdirectory
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / session_file.stem
     elif output is None:
-        output = Path(tempfile.gettempdir()) / session_file.stem
+        output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
     generate_html(session_file, output, github_repo=repo)
+
+    # Show output directory
+    click.echo(f"Output: {output.resolve()}")
 
     # Copy JSONL file to output directory if requested
     if include_json:
@@ -1177,9 +1190,8 @@ def local_cmd(output, repo, gist, include_json, open_browser, limit):
         preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
-        click.echo(f"Files: {output}")
 
-    if open_browser:
+    if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
         webbrowser.open(index_url)
 
@@ -1190,7 +1202,13 @@ def local_cmd(output, repo, gist, include_json, open_browser, limit):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: current directory, or temp dir with --gist/--open)",
+    help="Output directory. If not specified, writes to temp dir and opens in browser.",
+)
+@click.option(
+    "-a",
+    "--output-auto",
+    is_flag=True,
+    help="Auto-name output subdirectory based on filename (uses -o as parent, or current dir).",
 )
 @click.option(
     "--repo",
@@ -1211,22 +1229,25 @@ def local_cmd(output, repo, gist, include_json, open_browser, limit):
     "--open",
     "open_browser",
     is_flag=True,
-    help="Open the generated index.html in your default browser.",
+    help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, repo, gist, include_json, open_browser):
+def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
     """Convert a Claude Code session JSON/JSONL file to HTML."""
-    # Determine output directory
-    if (gist or open_browser) and output is None:
-        # Extract session ID from JSON file for temp directory name
-        with open(json_file, "r") as f:
-            data = json.load(f)
-        session_id = data.get("sessionId", Path(json_file).stem)
-        output = Path(tempfile.gettempdir()) / session_id
+    # Determine output directory and whether to open browser
+    # If no -o specified, use temp dir and open browser by default
+    auto_open = output is None and not gist and not output_auto
+    if output_auto:
+        # Use -o as parent dir (or current dir), with auto-named subdirectory
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / Path(json_file).stem
     elif output is None:
-        output = "."
+        output = Path(tempfile.gettempdir()) / f"claude-session-{Path(json_file).stem}"
 
     output = Path(output)
     generate_html(json_file, output, github_repo=repo)
+
+    # Show output directory
+    click.echo(f"Output: {output.resolve()}")
 
     # Copy JSON file to output directory if requested
     if include_json:
@@ -1245,9 +1266,8 @@ def json_cmd(json_file, output, repo, gist, include_json, open_browser):
         preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
-        click.echo(f"Files: {output}")
 
-    if open_browser:
+    if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
         webbrowser.open(index_url)
 
@@ -1491,7 +1511,13 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory (default: creates folder with session ID, or temp dir with --gist/--open)",
+    help="Output directory. If not specified, writes to temp dir and opens in browser.",
+)
+@click.option(
+    "-a",
+    "--output-auto",
+    is_flag=True,
+    help="Auto-name output subdirectory based on session ID (uses -o as parent, or current dir).",
 )
 @click.option("--token", help="API access token (auto-detected from keychain on macOS)")
 @click.option(
@@ -1516,10 +1542,18 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "--open",
     "open_browser",
     is_flag=True,
-    help="Open the generated index.html in your default browser.",
+    help="Open the generated index.html in your default browser (default if no -o specified).",
 )
 def web_cmd(
-    session_id, output, token, org_uuid, repo, gist, include_json, open_browser
+    session_id,
+    output,
+    output_auto,
+    token,
+    org_uuid,
+    repo,
+    gist,
+    include_json,
+    open_browser,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -1579,15 +1613,22 @@ def web_cmd(
     except httpx.RequestError as e:
         raise click.ClickException(f"Network error: {e}")
 
-    # Determine output directory
-    if (gist or open_browser) and output is None:
-        output = Path(tempfile.gettempdir()) / session_id
+    # Determine output directory and whether to open browser
+    # If no -o specified, use temp dir and open browser by default
+    auto_open = output is None and not gist and not output_auto
+    if output_auto:
+        # Use -o as parent dir (or current dir), with auto-named subdirectory
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / session_id
     elif output is None:
-        output = session_id
+        output = Path(tempfile.gettempdir()) / f"claude-session-{session_id}"
 
     output = Path(output)
     click.echo(f"Generating HTML in {output}/...")
     generate_html_from_session_data(session_data, output, github_repo=repo)
+
+    # Show output directory
+    click.echo(f"Output: {output.resolve()}")
 
     # Save JSON session data if requested
     if include_json:
@@ -1606,9 +1647,8 @@ def web_cmd(
         preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
-        click.echo(f"Files: {output}")
 
-    if open_browser:
+    if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
         webbrowser.open(index_url)
 

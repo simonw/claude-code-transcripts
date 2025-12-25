@@ -1192,3 +1192,174 @@ class TestLocalSessionCLI:
 
         assert result.exit_code == 0
         assert "No session selected" in result.output
+
+
+class TestOutputAutoOption:
+    """Tests for the -a/--output-auto flag."""
+
+    def test_json_output_auto_creates_subdirectory(self, tmp_path):
+        """Test that json -a creates output subdirectory named after file stem."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(fixture_path), "-a", "-o", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0
+        # Output should be in tmp_path/sample_session/
+        expected_dir = tmp_path / "sample_session"
+        assert expected_dir.exists()
+        assert (expected_dir / "index.html").exists()
+
+    def test_json_output_auto_uses_cwd_when_no_output(self, tmp_path, monkeypatch):
+        """Test that json -a uses current directory when -o not specified."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import os
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        # Change to tmp_path
+        monkeypatch.chdir(tmp_path)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(fixture_path), "-a"],
+        )
+
+        assert result.exit_code == 0
+        # Output should be in ./sample_session/
+        expected_dir = tmp_path / "sample_session"
+        assert expected_dir.exists()
+        assert (expected_dir / "index.html").exists()
+
+    def test_json_output_auto_no_browser_open(self, tmp_path, monkeypatch):
+        """Test that json -a does not auto-open browser."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        # Track webbrowser.open calls
+        opened_urls = []
+
+        def mock_open(url):
+            opened_urls.append(url)
+            return True
+
+        monkeypatch.setattr("claude_code_publish.webbrowser.open", mock_open)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(fixture_path), "-a", "-o", str(tmp_path)],
+        )
+
+        assert result.exit_code == 0
+        assert len(opened_urls) == 0  # No browser opened
+
+    def test_local_output_auto_creates_subdirectory(self, tmp_path, monkeypatch):
+        """Test that local -a creates output subdirectory named after file stem."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+        import questionary
+
+        # Create mock .claude/projects structure
+        projects_dir = tmp_path / ".claude" / "projects" / "test-project"
+        projects_dir.mkdir(parents=True)
+
+        session_file = projects_dir / "my-session-file.jsonl"
+        session_file.write_text(
+            '{"type":"summary","summary":"Test local session"}\n'
+            '{"type":"user","timestamp":"2025-01-01T00:00:00Z","message":{"role":"user","content":"Hello"}}\n'
+        )
+
+        output_parent = tmp_path / "output"
+        output_parent.mkdir()
+
+        # Mock Path.home() to return our tmp_path
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        # Mock questionary.select to return the session file
+        class MockSelect:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def ask(self):
+                return session_file
+
+        monkeypatch.setattr(questionary, "select", MockSelect)
+
+        runner = CliRunner()
+        result = runner.invoke(cli, ["local", "-a", "-o", str(output_parent)])
+
+        assert result.exit_code == 0
+        # Output should be in output_parent/my-session-file/
+        expected_dir = output_parent / "my-session-file"
+        assert expected_dir.exists()
+        assert (expected_dir / "index.html").exists()
+
+    def test_web_output_auto_creates_subdirectory(self, httpx_mock, tmp_path):
+        """Test that web -a creates output subdirectory named after session ID."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        # Load sample session to mock API response
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        with open(fixture_path) as f:
+            session_data = json.load(f)
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/session_ingress/session/my-web-session-id",
+            json=session_data,
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "web",
+                "my-web-session-id",
+                "--token",
+                "test-token",
+                "--org-uuid",
+                "test-org",
+                "-a",
+                "-o",
+                str(tmp_path),
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Output should be in tmp_path/my-web-session-id/
+        expected_dir = tmp_path / "my-web-session-id"
+        assert expected_dir.exists()
+        assert (expected_dir / "index.html").exists()
+
+    def test_output_auto_with_jsonl_uses_stem(self, tmp_path, monkeypatch):
+        """Test that -a with JSONL file uses file stem (without .jsonl extension)."""
+        from click.testing import CliRunner
+        from claude_code_publish import cli
+
+        # Create a JSONL file
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+
+        monkeypatch.chdir(tmp_path)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(fixture_path), "-a"],
+        )
+
+        assert result.exit_code == 0
+        # Output should be in ./sample_session/ (not ./sample_session.jsonl/)
+        expected_dir = tmp_path / "sample_session"
+        assert expected_dir.exists()
+        assert (expected_dir / "index.html").exists()
