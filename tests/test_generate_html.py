@@ -66,7 +66,7 @@ class TestGenerateHtml:
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
-        index_html = (output_dir / "index.html").read_text()
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert index_html == snapshot_html
 
     def test_generates_page_001_html(self, output_dir, snapshot_html):
@@ -74,7 +74,7 @@ class TestGenerateHtml:
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
-        page_html = (output_dir / "page-001.html").read_text()
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
         assert page_html == snapshot_html
 
     def test_generates_page_002_html(self, output_dir, snapshot_html):
@@ -82,7 +82,7 @@ class TestGenerateHtml:
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
-        page_html = (output_dir / "page-002.html").read_text()
+        page_html = (output_dir / "page-002.html").read_text(encoding="utf-8")
         assert page_html == snapshot_html
 
     def test_github_repo_autodetect(self, sample_session):
@@ -346,16 +346,16 @@ class TestInjectGistPreviewJs:
         """Test that JS is injected before </body> tag."""
         # Create test HTML files
         (output_dir / "index.html").write_text(
-            "<html><body><h1>Test</h1></body></html>"
+            "<html><body><h1>Test</h1></body></html>", encoding="utf-8"
         )
         (output_dir / "page-001.html").write_text(
-            "<html><body><p>Page 1</p></body></html>"
+            "<html><body><p>Page 1</p></body></html>", encoding="utf-8"
         )
 
         inject_gist_preview_js(output_dir)
 
-        index_content = (output_dir / "index.html").read_text()
-        page_content = (output_dir / "page-001.html").read_text()
+        index_content = (output_dir / "index.html").read_text(encoding="utf-8")
+        page_content = (output_dir / "page-001.html").read_text(encoding="utf-8")
 
         # Check JS was injected
         assert GIST_PREVIEW_JS in index_content
@@ -368,11 +368,13 @@ class TestInjectGistPreviewJs:
     def test_skips_files_without_body(self, output_dir):
         """Test that files without </body> are not modified."""
         original_content = "<html><head><title>Test</title></head></html>"
-        (output_dir / "fragment.html").write_text(original_content)
+        (output_dir / "fragment.html").write_text(original_content, encoding="utf-8")
 
         inject_gist_preview_js(output_dir)
 
-        assert (output_dir / "fragment.html").read_text() == original_content
+        assert (output_dir / "fragment.html").read_text(
+            encoding="utf-8"
+        ) == original_content
 
     def test_handles_empty_directory(self, output_dir):
         """Test that empty directories don't cause errors."""
@@ -389,8 +391,12 @@ class TestCreateGist:
         import click
 
         # Create test HTML files
-        (output_dir / "index.html").write_text("<html><body>Index</body></html>")
-        (output_dir / "page-001.html").write_text("<html><body>Page</body></html>")
+        (output_dir / "index.html").write_text(
+            "<html><body>Index</body></html>", encoding="utf-8"
+        )
+        (output_dir / "page-001.html").write_text(
+            "<html><body>Page</body></html>", encoding="utf-8"
+        )
 
         # Mock subprocess.run to simulate successful gh gist create
         mock_result = subprocess.CompletedProcess(
@@ -425,7 +431,9 @@ class TestCreateGist:
         import click
 
         # Create test HTML file
-        (output_dir / "index.html").write_text("<html><body>Test</body></html>")
+        (output_dir / "index.html").write_text(
+            "<html><body>Test</body></html>", encoding="utf-8"
+        )
 
         # Mock subprocess.run to simulate gh error
         def mock_run(*args, **kwargs):
@@ -448,7 +456,9 @@ class TestCreateGist:
         import click
 
         # Create test HTML file
-        (output_dir / "index.html").write_text("<html><body>Test</body></html>")
+        (output_dir / "index.html").write_text(
+            "<html><body>Test</body></html>", encoding="utf-8"
+        )
 
         # Mock subprocess.run to simulate gh not found
         def mock_run(*args, **kwargs):
@@ -533,7 +543,7 @@ class TestSessionGistOption:
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
         # Verify JS was injected
-        index_content = (output_dir / "index.html").read_text()
+        index_content = (output_dir / "index.html").read_text(encoding="utf-8")
         assert "gistpreview.github.io" in index_content
 
 
@@ -621,13 +631,13 @@ class TestContinuationLongTexts:
 
         # Write the session to a temp file
         session_file = output_dir / "test_session.json"
-        session_file.write_text(json.dumps(session_data))
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
 
         # Generate HTML
         generate_html(session_file, output_dir)
 
         # Read the index.html
-        index_html = (output_dir / "index.html").read_text()
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
         # The long text summary should appear in the index
         # This is the bug: currently it doesn't because the continuation
@@ -942,7 +952,7 @@ class TestParseSessionFile:
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
         generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text()
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert "hello world" in index_html.lower()
         assert index_html == snapshot_html
 
@@ -968,7 +978,7 @@ class TestGetSessionSummary:
     def test_returns_no_summary_for_empty_file(self, tmp_path):
         """Test handling empty or invalid files."""
         jsonl_file = tmp_path / "empty.jsonl"
-        jsonl_file.write_text("")
+        jsonl_file.write_text("", encoding="utf-8")
         summary = get_session_summary(jsonl_file)
         assert summary == "(no summary)"
 
