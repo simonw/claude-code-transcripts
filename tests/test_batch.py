@@ -1,9 +1,7 @@
 """Tests for batch conversion functionality."""
 
-import json
 import tempfile
 from pathlib import Path
-from datetime import datetime
 
 import pytest
 from click.testing import CliRunner
@@ -392,3 +390,26 @@ class TestBatchCommand:
         assert "Scanning" not in result.output
         assert "Processed" not in result.output
         assert "Generating" not in result.output
+
+    def test_batch_quiet_with_dry_run(self, mock_projects_dir, output_dir):
+        """Test --quiet flag works with --dry-run."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "batch",
+                "--source",
+                str(mock_projects_dir),
+                "--output",
+                str(output_dir),
+                "--dry-run",
+                "--quiet",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Dry run with quiet should produce no output
+        assert "Dry run" not in result.output
+        assert "project-a" not in result.output
+        # Should not create any files
+        assert not (output_dir / "index.html").exists()

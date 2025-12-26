@@ -370,7 +370,7 @@ def _generate_project_index(project, output_dir):
             }
         )
 
-    html = template.render(
+    html_content = template.render(
         project_name=project["name"],
         sessions=sessions_data,
         session_count=len(sessions_data),
@@ -379,7 +379,7 @@ def _generate_project_index(project, output_dir):
     )
 
     output_path = output_dir / "index.html"
-    output_path.write_text(html, encoding="utf-8")
+    output_path.write_text(html_content, encoding="utf-8")
 
 
 def _generate_master_index(projects, output_dir):
@@ -409,7 +409,7 @@ def _generate_master_index(projects, output_dir):
             }
         )
 
-    html = template.render(
+    html_content = template.render(
         projects=projects_data,
         total_projects=len(projects),
         total_sessions=total_sessions,
@@ -418,7 +418,7 @@ def _generate_master_index(projects, output_dir):
     )
 
     output_path = output_dir / "index.html"
-    output_path.write_text(html, encoding="utf-8")
+    output_path.write_text(html_content, encoding="utf-8")
 
 
 def parse_session_file(filepath):
@@ -1885,16 +1885,20 @@ def batch_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         click.echo(f"Found {len(projects)} projects with {total_sessions} sessions")
 
     if dry_run:
-        click.echo("\nDry run - would convert:")
-        for project in projects:
-            click.echo(f"\n  {project['name']} ({len(project['sessions'])} sessions)")
-            for session in project["sessions"][:3]:  # Show first 3
-                mod_time = datetime.fromtimestamp(session["mtime"])
+        # Dry-run always outputs (it's the point of dry-run), but respects --quiet
+        if not quiet:
+            click.echo("\nDry run - would convert:")
+            for project in projects:
                 click.echo(
-                    f"    - {session['path'].stem} ({mod_time.strftime('%Y-%m-%d')})"
+                    f"\n  {project['name']} ({len(project['sessions'])} sessions)"
                 )
-            if len(project["sessions"]) > 3:
-                click.echo(f"    ... and {len(project['sessions']) - 3} more")
+                for session in project["sessions"][:3]:  # Show first 3
+                    mod_time = datetime.fromtimestamp(session["mtime"])
+                    click.echo(
+                        f"    - {session['path'].stem} ({mod_time.strftime('%Y-%m-%d')})"
+                    )
+                if len(project["sessions"]) > 3:
+                    click.echo(f"    ... and {len(project['sessions']) - 3} more")
         return
 
     if not quiet:
