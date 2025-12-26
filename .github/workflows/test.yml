@@ -24,5 +24,7 @@ jobs:
       run: |
         pip install -e . --group dev
     - name: Run tests
+      env:
+        PYTHONUTF8: "1"
       run: |
         python -m pytest
