@@ -24,7 +24,14 @@ uvx claude-code-transcripts --help
 
 ## Usage
 
-This tool converts Claude Code session files into browseable multi-page HTML transcripts.
+This tool has two modes:
+
+1. **CLI mode** - Convert individual session files to HTML
+2. **Server mode** - Run a web server that automatically syncs and serves all transcripts
+
+### CLI Mode
+
+The CLI converts Claude Code session files into browseable multi-page HTML transcripts.
 
 There are three commands available:
 
@@ -39,6 +46,29 @@ claude-code-transcripts
 ```
 
 This shows an interactive picker to select a session, generates HTML, and opens it in your default browser.
+
+### Server Mode
+
+Run a local web server that automatically syncs transcripts hourly and provides a browseable interface:
+
+```bash
+# Set up PostgreSQL database
+createdb claude_transcripts
+
+# Run migrations
+DATABASE_URL="postgresql://localhost/claude_transcripts" uv run alembic upgrade head
+
+# Start the server
+DATABASE_URL="postgresql://localhost/claude_transcripts" uv run claude-code-transcripts-server
+```
+
+The server will:
+- Auto-sync transcripts from both local and web sources every hour
+- Serve transcripts at http://127.0.0.1:5000
+- Only re-generate HTML for changed conversations
+- Provide a web UI for browsing all transcripts
+
+See [SERVER.md](SERVER.md) for detailed server documentation.
 
 ### Output options
 

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code Transcripts</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --text-color: #e0e0e0;
+            --heading-color: #ffffff;
+            --link-color: #60a5fa;
+            --link-hover-color: #93c5fd;
+            --border-color: #374151;
+            --card-bg: #262626;
+            --card-hover-bg: #2d2d2d;
+            --source-local-color: #10b981;
+            --source-web-color: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        h1 {
+            color: var(--heading-color);
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-color);
+            font-size: 1.1rem;
+            opacity: 0.8;
+        }
+
+        .controls {
+            margin-bottom: 30px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .btn {
+            background: var(--link-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background: var(--link-hover-color);
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat {
+            background: var(--card-bg);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--heading-color);
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .transcript-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .transcript-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: var(--text-color);
+            display: block;
+        }
+
+        .transcript-card:hover {
+            background: var(--card-hover-bg);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .transcript-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+
+        .transcript-id {
+            font-family: 'Monaco', 'Courier New', monospace;
+            color: var(--link-color);
+            font-size: 1.1rem;
+        }
+
+        .source-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .source-local {
+            background: var(--source-local-color);
+            color: white;
+        }
+
+        .source-web {
+            background: var(--source-web-color);
+            color: white;
+        }
+
+        .transcript-preview {
+            color: var(--text-color);
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+
+        .transcript-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 0.9rem;
+            opacity: 0.7;
+            margin-top: 10px;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-color);
+            opacity: 0.6;
+        }
+
+        .empty-state h2 {
+            color: var(--heading-color);
+            margin-bottom: 10px;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .stats {
+                flex-direction: column;
+            }
+
+            .transcript-header {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Claude Code Transcripts</h1>
+            <p class="subtitle">Browse and view your Claude Code conversation transcripts</p>
+        </header>
+
+        <div class="controls">
+            <button class="btn" onclick="triggerSync()">Sync Now</button>
+            <span id="sync-status"></span>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-value">{{ conversations|length }}</div>
+                <div class="stat-label">Total Transcripts</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ conversations|selectattr('source', 'equalto', 'local')|list|length }}</div>
+                <div class="stat-label">Local Sessions</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value">{{ conversations|selectattr('source', 'equalto', 'web')|list|length }}</div>
+                <div class="stat-label">Web Sessions</div>
+            </div>
+        </div>
+
+        {% if conversations %}
+        <div class="transcript-list">
+            {% for conv in conversations %}
+            <a href="/transcript/{{ conv.session_id }}" class="transcript-card">
+                <div class="transcript-header">
+                    <div class="transcript-id">{{ conv.session_id }}</div>
+                    <span class="source-badge source-{{ conv.source }}">{{ conv.source }}</span>
+                </div>
+                {% if conv.first_message %}
+                <div class="transcript-preview">{{ conv.first_message }}</div>
+                {% endif %}
+                <div class="transcript-meta">
+                    <div class="meta-item">
+                        📝 {{ conv.message_count }} messages
+                    </div>
+                    <div class="meta-item">
+                        🕒 Updated {{ conv.last_updated.strftime('%Y-%m-%d %H:%M') }}
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <h2>No transcripts yet</h2>
+            <p>Click "Sync Now" to fetch your Claude Code transcripts.</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        async function triggerSync() {
+            const statusEl = document.getElementById('sync-status');
+            const btn = event.target;
+
+            btn.disabled = true;
+            statusEl.textContent = 'Syncing...';
+
+            try {
+                const response = await fetch('/sync');
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    statusEl.textContent = `✓ Synced ${data.stats.total_updated} transcripts`;
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    statusEl.textContent = `✗ Error: ${data.message}`;
+                }
+            } catch (error) {
+                statusEl.textContent = `✗ Error: ${error.message}`;
+            } finally {
+                btn.disabled = false;
+                setTimeout(() => statusEl.textContent = '', 5000);
+            }
+        }
+    </script>
+</body>
+</html>
