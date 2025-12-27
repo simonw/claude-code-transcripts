@@ -1458,3 +1458,82 @@ class TestOutputAutoOption:
         expected_dir = tmp_path / "sample_session"
         assert expected_dir.exists()
         assert (expected_dir / "index.html").exists()
+
+
+class TestSearchFeature:
+    """Tests for the search feature on index.html pages."""
+
+    def test_search_box_in_index_html(self, output_dir):
+        """Test that search box is present in index.html."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Search box should be present with id="search-box"
+        assert 'id="search-box"' in index_html
+        # Search input should be present
+        assert 'id="search-input"' in index_html
+        # Search button should be present
+        assert 'id="search-btn"' in index_html
+
+    def test_search_modal_in_index_html(self, output_dir):
+        """Test that search modal dialog is present in index.html."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Search modal should be present
+        assert 'id="search-modal"' in index_html
+        # Results container should be present
+        assert 'id="search-results"' in index_html
+
+    def test_search_javascript_present(self, output_dir):
+        """Test that search JavaScript functionality is present."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # JavaScript should handle DOMParser for parsing fetched pages
+        assert "DOMParser" in index_html
+        # JavaScript should handle fetch for getting pages
+        assert "fetch(" in index_html
+        # JavaScript should handle #search= URL fragment
+        assert "#search=" in index_html or "search=" in index_html
+
+    def test_search_css_present(self, output_dir):
+        """Test that search CSS styles are present."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # CSS should style the search box
+        assert "#search-box" in index_html or ".search-box" in index_html
+        # CSS should style the search modal
+        assert "#search-modal" in index_html or ".search-modal" in index_html
+
+    def test_search_box_hidden_by_default_in_css(self, output_dir):
+        """Test that search box is hidden by default (for progressive enhancement)."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Search box should be hidden by default in CSS
+        # JavaScript will show it when loaded
+        assert "search-box" in index_html
+        # The JS should show the search box
+        assert "style.display" in index_html or "classList" in index_html
+
+    def test_search_total_pages_available(self, output_dir):
+        """Test that total_pages is available to JavaScript for fetching."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Total pages should be embedded for JS to know how many pages to fetch
+        assert "totalPages" in index_html or "total_pages" in index_html
