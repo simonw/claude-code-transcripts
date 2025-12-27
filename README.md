@@ -89,7 +89,61 @@ claude-code-transcripts web SESSION_ID --gist
 
 On macOS, API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
 
-### JSON/JSONL files
+### Publishing to GitHub Gist
+
+Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
+
+```bash
+claude-code-transcripts --gist
+claude-code-transcripts web --gist
+claude-code-transcripts json session.json --gist
+```
+
+This will output something like:
+```
+Gist: https://gist.github.com/username/abc123def456
+Preview: https://gistpreview.github.io/?abc123def456/index.html
+Files: /var/folders/.../session-id
+```
+
+The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gistpreview.
+
+Combine with `-o` to keep a local copy:
+
+```bash
+claude-code-transcripts json session.json -o ./my-transcript --gist
+```
+
+**Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
+
+### Auto-naming output directories
+
+Use `-a/--output-auto` to automatically create a subdirectory named after the session:
+
+```bash
+# Creates ./session_ABC123/ subdirectory
+claude-code-transcripts web SESSION_ABC123 -a
+
+# Creates ./transcripts/session_ABC123/ subdirectory
+claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
+```
+
+### Including the source file
+
+Use the `--json` option to include the original session file in the output directory:
+
+```bash
+claude-code-transcripts json session.json -o ./my-transcript --json
+```
+
+This will output:
+```
+JSON: ./my-transcript/session_ABC.json (245.3 KB)
+```
+
+This is useful for archiving the source data alongside the HTML output.
+
+### Converting from JSON/JSONL files
 
 Convert a specific session file directly:
 
@@ -137,60 +191,6 @@ claude-code-transcripts all -o ./my-archive
 # Include agent sessions
 claude-code-transcripts all --include-agents
 ```
-
-### Auto-naming output directories
-
-Use `-a/--output-auto` to automatically create a subdirectory named after the session:
-
-```bash
-# Creates ./session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -a
-
-# Creates ./transcripts/session_ABC123/ subdirectory
-claude-code-transcripts web SESSION_ABC123 -o ./transcripts -a
-```
-
-### Publishing to GitHub Gist
-
-Use the `--gist` option to automatically upload your transcript to a GitHub Gist and get a shareable preview URL:
-
-```bash
-claude-code-transcripts --gist
-claude-code-transcripts web --gist
-claude-code-transcripts json session.json --gist
-```
-
-This will output something like:
-```
-Gist: https://gist.github.com/username/abc123def456
-Preview: https://gistpreview.github.io/?abc123def456/index.html
-Files: /var/folders/.../session-id
-```
-
-The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gistpreview.
-
-Combine with `-o` to keep a local copy:
-
-```bash
-claude-code-transcripts json session.json -o ./my-transcript --gist
-```
-
-**Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
-
-### Including the source file
-
-Use the `--json` option to include the original session file in the output directory:
-
-```bash
-claude-code-transcripts json session.json -o ./my-transcript --json
-```
-
-This will output:
-```
-JSON: ./my-transcript/session_ABC.json (245.3 KB)
-```
-
-This is useful for archiving the source data alongside the HTML output.
 
 ## Development
 
