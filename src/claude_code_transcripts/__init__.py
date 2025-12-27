@@ -651,7 +651,12 @@ def render_content_block(block):
     if not isinstance(block, dict):
         return f"<p>{html.escape(str(block))}</p>"
     block_type = block.get("type", "")
-    if block_type == "thinking":
+    if block_type == "image":
+        source = block.get("source", {})
+        media_type = source.get("media_type", "image/png")
+        data = source.get("data", "")
+        return _macros.image_block(media_type, data)
+    elif block_type == "thinking":
         content_html = render_markdown_text(block.get("thinking", ""))
         return _macros.thinking(content_html)
     elif block_type == "text":

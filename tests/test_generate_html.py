@@ -182,6 +182,47 @@ class TestRenderFunctions:
 class TestRenderContentBlock:
     """Tests for render_content_block function."""
 
+    def test_image_block(self, snapshot_html):
+        """Test image block rendering with base64 data URL."""
+        # 200x200 black GIF - minimal valid GIF with black pixels
+        # Generated with: from PIL import Image; img = Image.new('RGB', (200, 200), (0, 0, 0)); img.save('black.gif')
+        import base64
+        import io
+
+        # Create a minimal 200x200 black GIF using raw bytes
+        # GIF89a header + logical screen descriptor + global color table + image data
+        gif_data = (
+            b"GIF89a"  # Header
+            b"\xc8\x00\xc8\x00"  # Width 200, Height 200
+            b"\x80"  # Global color table flag (1 color: 2^(0+1)=2 colors)
+            b"\x00"  # Background color index
+            b"\x00"  # Pixel aspect ratio
+            b"\x00\x00\x00"  # Color 0: black
+            b"\x00\x00\x00"  # Color 1: black (padding)
+            b","  # Image separator
+            b"\x00\x00\x00\x00"  # Left, Top
+            b"\xc8\x00\xc8\x00"  # Width 200, Height 200
+            b"\x00"  # No local color table
+            b"\x08"  # LZW minimum code size
+            b"\x02\x04\x01\x00"  # Compressed data (minimal)
+            b";"  # GIF trailer
+        )
+        black_gif_base64 = base64.b64encode(gif_data).decode("ascii")
+
+        block = {
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/gif",
+                "data": black_gif_base64,
+            },
+        }
+        result = render_content_block(block)
+        # The result should contain an img tag with data URL
+        assert 'src="data:image/gif;base64,' in result
+        assert "max-width: 100%" in result
+        assert result == snapshot_html
+
     def test_thinking_block(self, snapshot_html):
         """Test thinking block rendering."""
         block = {
