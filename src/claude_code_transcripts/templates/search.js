@@ -43,10 +43,18 @@
         }
     }
 
-    function getPageUrl(pageFile) {
+    function getPageFetchUrl(pageFile) {
         if (isGistPreview && gistOwner && gistId) {
-            // Use raw gist URL for fetching
+            // Use raw gist URL for fetching content
             return 'https://gist.githubusercontent.com/' + gistOwner + '/' + gistId + '/raw/' + pageFile;
+        }
+        return pageFile;
+    }
+
+    function getPageLinkUrl(pageFile) {
+        if (isGistPreview && gistId) {
+            // Use gistpreview URL format for navigation links
+            return '?' + gistId + '/' + pageFile;
         }
         return pageFile;
     }
@@ -141,12 +149,13 @@
 
                 // Get the message ID for linking
                 var msgId = msg.id || '';
-                var link = pageFile + (msgId ? '#' + msgId : '');
+                var pageLinkUrl = getPageLinkUrl(pageFile);
+                var link = pageLinkUrl + (msgId ? '#' + msgId : '');
 
                 // Clone the message HTML and highlight matches
                 var clone = msg.cloneNode(true);
                 // Fix internal links to include the page file
-                fixInternalLinks(clone, pageFile);
+                fixInternalLinks(clone, pageLinkUrl);
                 highlightTextNodes(clone, query);
 
                 var resultDiv = document.createElement('div');
@@ -200,7 +209,7 @@
 
             // Create promises that process results immediately when each fetch completes
             var promises = batch.map(function(pageFile) {
-                return fetch(getPageUrl(pageFile))
+                return fetch(getPageFetchUrl(pageFile))
                     .then(function(response) {
                         if (!response.ok) throw new Error('Failed to fetch');
                         return response.text();
