@@ -5,6 +5,12 @@
 {% block content %}
         <div class="header-row">
             <h1>Claude Code transcript</h1>
+            {% if has_code_view %}
+            <nav class="tab-bar">
+                <a href="index.html" class="tab active">Transcript</a>
+                <a href="code.html" class="tab">Code</a>
+            </nav>
+            {% endif %}
             <div id="search-box">
                 <input type="text" id="search-input" placeholder="Search..." aria-label="Search transcripts">
                 <button id="search-btn" type="button" aria-label="Search">

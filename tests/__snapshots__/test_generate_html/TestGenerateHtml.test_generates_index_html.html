@@ -141,12 +141,82 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .search-result-content { padding: 12px; }
 .search-result mark { background: #fff59d; padding: 1px 2px; border-radius: 2px; }
 @media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
+
+/* Tab Bar */
+.tab-bar { display: flex; gap: 4px; }
+.tab { padding: 6px 16px; text-decoration: none; color: var(--text-muted); border-radius: 6px 6px 0 0; background: rgba(0,0,0,0.03); }
+.tab:hover { color: var(--text-color); background: rgba(0,0,0,0.06); }
+.tab.active { color: var(--user-border); background: var(--card-bg); font-weight: 600; }
+.header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+
+/* Code Viewer Layout */
+.code-viewer { display: flex; height: calc(100vh - 140px); gap: 16px; min-height: 400px; }
+.file-tree-panel { width: 280px; min-width: 200px; overflow-y: auto; background: var(--card-bg); border-radius: 8px; padding: 16px; flex-shrink: 0; }
+.file-tree-panel h3 { margin: 0 0 8px 0; font-size: 1rem; }
+.mode-badge { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; margin-bottom: 12px; }
+.mode-badge.full-mode { background: #e8f5e9; color: #2e7d32; }
+.mode-badge.diff-mode { background: #fff3e0; color: #e65100; }
+.code-panel { flex: 1; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 8px; overflow: hidden; min-width: 0; }
+#code-header { padding: 12px 16px; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); }
+#current-file-path { font-family: monospace; font-weight: 600; font-size: 0.9rem; word-break: break-all; }
+#code-content { flex: 1; overflow: auto; }
+.no-file-selected { padding: 32px; text-align: center; color: var(--text-muted); }
+
+/* File Tree */
+.file-tree { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
+.file-tree ul { list-style: none; padding-left: 16px; margin: 0; }
+.tree-dir, .tree-file { padding: 4px 8px; cursor: pointer; border-radius: 4px; }
+.tree-toggle { display: inline-block; width: 16px; transition: transform 0.2s; font-size: 0.7rem; }
+.tree-dir.open > .tree-toggle { transform: rotate(90deg); }
+.tree-children { display: none; }
+.tree-dir.open > .tree-children { display: block; }
+.tree-file:hover { background: rgba(0,0,0,0.05); }
+.tree-file.selected { background: var(--user-bg); }
+.tree-file-icon { margin-right: 6px; }
+.tree-dir-name { font-weight: 500; }
+
+/* Blame Gutter */
+.cm-blame-gutter { width: 28px; background: rgba(0,0,0,0.02); }
+.blame-marker { display: flex; justify-content: center; align-items: center; height: 100%; }
+.blame-link { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; background: var(--user-border); color: white; border-radius: 3px; text-decoration: none; font-size: 0.65rem; font-weight: bold; }
+.blame-link:hover { background: #1565c0; }
+.blame-initial { color: var(--text-muted); font-size: 0.8rem; }
+
+/* CodeMirror Overrides */
+.cm-editor { height: 100%; font-size: 0.85rem; }
+.cm-scroller { overflow: auto; }
+.cm-content { font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; }
+
+/* Diff-only View */
+.diff-only-view { padding: 16px; }
+.diff-operation { margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+.diff-header { padding: 8px 12px; background: rgba(0,0,0,0.03); display: flex; align-items: center; gap: 12px; font-size: 0.85rem; flex-wrap: wrap; }
+.diff-type { font-weight: 600; background: var(--user-border); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; }
+.diff-link { color: var(--user-border); text-decoration: none; }
+.diff-link:hover { text-decoration: underline; }
+.diff-content { margin: 0; padding: 12px; overflow-x: auto; background: var(--card-bg); font-size: 0.85rem; }
+.diff-write { background: #e8f5e9; border-left: 4px solid #4caf50; }
+.diff-edit { display: flex; flex-direction: column; }
+.diff-edit .edit-section { display: flex; }
+.diff-edit .edit-label { width: 24px; padding: 8px 4px; font-weight: bold; text-align: center; flex-shrink: 0; }
+.diff-edit .edit-old { background: #ffebee; }
+.diff-edit .edit-old .edit-label { color: #c62828; }
+.diff-edit .edit-new { background: #e8f5e9; }
+.diff-edit .edit-new .edit-label { color: #2e7d32; }
+.diff-edit .edit-content { flex: 1; margin: 0; padding: 8px; overflow-x: auto; font-size: 0.85rem; }
+
+@media (max-width: 768px) {
+    .code-viewer { flex-direction: column; height: auto; }
+    .file-tree-panel { width: 100%; max-height: 200px; }
+    .code-panel { min-height: 400px; }
+}
 </style>
 </head>
 <body>
     <div class="container">
         <div class="header-row">
             <h1>Claude Code transcript</h1>
+            
             <div id="search-box">
                 <input type="text" id="search-input" placeholder="Search..." aria-label="Search transcripts">
                 <button id="search-btn" type="button" aria-label="Search">

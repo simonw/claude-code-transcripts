@@ -1,5 +1,6 @@
 """Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
 
+import base64
 import json
 import html
 import os
@@ -9,8 +10,10 @@ import shutil
 import subprocess
 import tempfile
 import webbrowser
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from typing import Optional, List, Tuple, Dict, Any
 
 import click
 from click_default_group import DefaultGroup
@@ -47,6 +50,684 @@ PROMPTS_PER_PAGE = 5
 LONG_TEXT_THRESHOLD = (
     300  # Characters - text blocks longer than this are shown in index
 )
+
+
+# ============================================================================
+# Code Viewer Data Structures
+# ============================================================================
+
+
+@dataclass
+class FileOperation:
+    """Represents a single Write or Edit operation on a file."""
+
+    file_path: str
+    operation_type: str  # "write" or "edit"
+    tool_id: str  # tool_use.id for linking
+    timestamp: str
+    page_num: int  # which page this operation appears on
+    msg_id: str  # anchor ID in the HTML page
+
+    # For Write operations
+    content: Optional[str] = None
+
+    # For Edit operations
+    old_string: Optional[str] = None
+    new_string: Optional[str] = None
+    replace_all: bool = False
+
+
+@dataclass
+class FileState:
+    """Represents the reconstructed state of a file with blame annotations."""
+
+    file_path: str
+    operations: List[FileOperation] = field(default_factory=list)
+
+    # If we have a git repo, we can reconstruct full content
+    initial_content: Optional[str] = None  # From git or first Write
+    final_content: Optional[str] = None  # Reconstructed content
+
+    # Blame data: list of (line_text, FileOperation or None)
+    # None means the line came from initial_content (pre-session)
+    blame_lines: List[Tuple[str, Optional[FileOperation]]] = field(default_factory=list)
+
+    # For diff-only mode when no repo is available
+    diff_only: bool = False
+
+
+@dataclass
+class CodeViewData:
+    """All data needed to render the code viewer."""
+
+    files: Dict[str, FileState] = field(default_factory=dict)  # file_path -> FileState
+    file_tree: Dict[str, Any] = field(default_factory=dict)  # Nested dict for file tree
+    mode: str = "diff_only"  # "full" or "diff_only"
+    repo_path: Optional[str] = None
+    session_cwd: Optional[str] = None
+
+
+# ============================================================================
+# Code Viewer Functions
+# ============================================================================
+
+
+def extract_file_operations(
+    loglines: List[Dict], conversations: List[Dict]
+) -> List[FileOperation]:
+    """Extract all Write and Edit operations from session loglines.
+
+    Args:
+        loglines: List of parsed logline entries from the session.
+        conversations: List of conversation dicts with page mapping info.
+
+    Returns:
+        List of FileOperation objects sorted by timestamp.
+    """
+    operations = []
+
+    # Build a mapping from message content to page number and message ID
+    # We need to track which page each operation appears on
+    msg_to_page = {}
+    for conv_idx, conv in enumerate(conversations):
+        page_num = (conv_idx // PROMPTS_PER_PAGE) + 1
+        for msg_idx, (log_type, message_json, timestamp) in enumerate(
+            conv.get("messages", [])
+        ):
+            # Generate a unique ID for this message
+            msg_id = f"msg-{conv_idx}-{msg_idx}"
+            # Store timestamp -> (page_num, msg_id) mapping
+            msg_to_page[timestamp] = (page_num, msg_id)
+
+    for entry in loglines:
+        timestamp = entry.get("timestamp", "")
+        message = entry.get("message", {})
+        content = message.get("content", [])
+
+        if not isinstance(content, list):
+            continue
+
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+
+            if block.get("type") != "tool_use":
+                continue
+
+            tool_name = block.get("name", "")
+            tool_id = block.get("id", "")
+            tool_input = block.get("input", {})
+
+            # Get page and message ID from our mapping
+            page_num, msg_id = msg_to_page.get(timestamp, (1, "msg-0-0"))
+
+            if tool_name == "Write":
+                file_path = tool_input.get("file_path", "")
+                file_content = tool_input.get("content", "")
+
+                if file_path:
+                    operations.append(
+                        FileOperation(
+                            file_path=file_path,
+                            operation_type="write",
+                            tool_id=tool_id,
+                            timestamp=timestamp,
+                            page_num=page_num,
+                            msg_id=msg_id,
+                            content=file_content,
+                        )
+                    )
+
+            elif tool_name == "Edit":
+                file_path = tool_input.get("file_path", "")
+                old_string = tool_input.get("old_string", "")
+                new_string = tool_input.get("new_string", "")
+                replace_all = tool_input.get("replace_all", False)
+
+                if file_path and old_string is not None and new_string is not None:
+                    operations.append(
+                        FileOperation(
+                            file_path=file_path,
+                            operation_type="edit",
+                            tool_id=tool_id,
+                            timestamp=timestamp,
+                            page_num=page_num,
+                            msg_id=msg_id,
+                            old_string=old_string,
+                            new_string=new_string,
+                            replace_all=replace_all,
+                        )
+                    )
+
+    # Sort by timestamp
+    operations.sort(key=lambda op: op.timestamp)
+    return operations
+
+
+def build_file_tree(file_states: Dict[str, FileState]) -> Dict[str, Any]:
+    """Build a nested dict structure for file tree UI.
+
+    Args:
+        file_states: Dict mapping file paths to FileState objects.
+
+    Returns:
+        Nested dict where keys are path components and leaves are FileState objects.
+    """
+    tree: Dict[str, Any] = {}
+
+    for file_path, file_state in file_states.items():
+        # Normalize path and split into components
+        parts = Path(file_path).parts
+
+        # Navigate/create the nested structure
+        current = tree
+        for i, part in enumerate(parts[:-1]):  # All but the last part (directories)
+            if part not in current:
+                current[part] = {}
+            current = current[part]
+
+        # Add the file (last part)
+        if parts:
+            current[parts[-1]] = file_state
+
+    return tree
+
+
+def is_url(s: str) -> bool:
+    """Check if a string looks like a URL."""
+    return s.startswith("http://") or s.startswith("https://")
+
+
+def fetch_session_from_url(url: str) -> Path:
+    """Fetch a session file from a URL and save to a temp file.
+
+    Args:
+        url: The URL to fetch from.
+
+    Returns:
+        Path to the temporary file containing the session data.
+
+    Raises:
+        click.ClickException: If the fetch fails.
+    """
+    try:
+        response = httpx.get(url, follow_redirects=True, timeout=30.0)
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        raise click.ClickException(
+            f"Failed to fetch URL: {e.response.status_code} {e.response.text[:200]}"
+        )
+    except httpx.RequestError as e:
+        raise click.ClickException(f"Network error fetching URL: {e}")
+
+    # Determine file extension from URL or default to .jsonl
+    url_path = url.split("?")[0]  # Remove query params
+    if url_path.endswith(".json"):
+        suffix = ".json"
+    else:
+        suffix = ".jsonl"
+
+    # Save to temp file
+    fd, temp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(response.text)
+    except Exception:
+        os.close(fd)
+        raise
+
+    return Path(temp_path)
+
+
+def parse_repo_value(repo: Optional[str]) -> Tuple[Optional[str], Optional[Path]]:
+    """Parse --repo value to extract GitHub repo name and/or local path.
+
+    Args:
+        repo: The --repo value (could be path, URL, or owner/name).
+
+    Returns:
+        Tuple of (github_repo, local_path):
+        - github_repo: "owner/name" string for commit links, or None
+        - local_path: Path to local git repo for file history, or None
+    """
+    if not repo:
+        return None, None
+
+    # Check if it's a local path that exists
+    repo_path = Path(repo)
+    if repo_path.exists() and (repo_path / ".git").exists():
+        # Try to extract GitHub remote URL
+        github_repo = None
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                remote_url = result.stdout.strip()
+                # Extract owner/name from various URL formats
+                match = re.search(r"github\.com[:/]([^/]+/[^/.]+)", remote_url)
+                if match:
+                    github_repo = match.group(1)
+                    if github_repo.endswith(".git"):
+                        github_repo = github_repo[:-4]
+        except Exception:
+            pass
+        return github_repo, repo_path
+
+    # Check if it's a GitHub URL
+    if is_url(repo):
+        # Extract owner/name from URL
+        match = re.search(r"github\.com/([^/]+/[^/?#]+)", repo)
+        if match:
+            github_repo = match.group(1)
+            if github_repo.endswith(".git"):
+                github_repo = github_repo[:-4]
+            return github_repo, None
+        # Not a GitHub URL, ignore
+        return None, None
+
+    # Assume it's owner/name format
+    if "/" in repo and not repo.startswith("/"):
+        return repo, None
+
+    return None, None
+
+
+def get_initial_file_content(
+    file_path: str,
+    repo_path: Optional[str],
+    session_cwd: Optional[str] = None,
+) -> Optional[str]:
+    """Get the initial content of a file from git (before session modifications).
+
+    Supports both local git repos and public GitHub URLs.
+
+    Args:
+        file_path: Absolute path to the file.
+        repo_path: Either a local path to a git repo, or a GitHub URL.
+        session_cwd: The session's working directory (for resolving relative paths).
+
+    Returns:
+        The file content, or None if the file doesn't exist or can't be fetched.
+    """
+    if not repo_path:
+        return None
+
+    # Determine if repo_path is a URL or local path
+    if is_url(repo_path):
+        return _get_file_from_github(file_path, repo_path, session_cwd)
+    else:
+        return _get_file_from_local_git(file_path, repo_path)
+
+
+def _get_file_from_local_git(file_path: str, repo_path: str) -> Optional[str]:
+    """Get file content from a local git repo using git show."""
+    repo = Path(repo_path)
+    target = Path(file_path)
+
+    # Get relative path from repo root
+    try:
+        rel_path = target.relative_to(repo)
+    except ValueError:
+        # File is not inside the repo
+        return None
+
+    # Use git show HEAD:path to get the committed content
+    try:
+        result = subprocess.run(
+            ["git", "show", f"HEAD:{rel_path}"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return result.stdout
+        return None
+    except Exception:
+        return None
+
+
+def _get_file_from_github(
+    file_path: str, github_url: str, session_cwd: Optional[str] = None
+) -> Optional[str]:
+    """Get file content from a public GitHub repo via the API."""
+    # Extract owner/repo from URL
+    match = re.search(r"github\.com/([^/]+/[^/?#]+)", github_url)
+    if not match:
+        return None
+
+    owner_repo = match.group(1)
+    if owner_repo.endswith(".git"):
+        owner_repo = owner_repo[:-4]
+
+    # Get relative path from session cwd
+    if session_cwd:
+        try:
+            rel_path = Path(file_path).relative_to(session_cwd)
+        except ValueError:
+            # Fall back to using the file path as-is
+            rel_path = Path(file_path).name
+    else:
+        rel_path = Path(file_path).name
+
+    # Fetch from GitHub API
+    api_url = f"https://api.github.com/repos/{owner_repo}/contents/{rel_path}"
+    try:
+        response = httpx.get(api_url, timeout=10.0)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+
+        data = response.json()
+        if data.get("encoding") == "base64":
+            return base64.b64decode(data["content"]).decode("utf-8")
+        return None
+    except Exception:
+        return None
+
+
+def reconstruct_file_with_blame(
+    initial_content: Optional[str],
+    operations: List[FileOperation],
+) -> Tuple[str, List[Tuple[str, Optional[FileOperation]]]]:
+    """Reconstruct a file's final state with blame attribution for each line.
+
+    Applies all operations in order and tracks which operation wrote each line.
+
+    Args:
+        initial_content: The initial file content (from git), or None if new file.
+        operations: List of FileOperation objects in chronological order.
+
+    Returns:
+        Tuple of (final_content, blame_lines):
+        - final_content: The reconstructed file content as a string
+        - blame_lines: List of (line_text, operation) tuples, where operation
+          is None for lines from initial_content (pre-session)
+    """
+    # Initialize with initial content
+    if initial_content:
+        lines = initial_content.rstrip("\n").split("\n")
+        blame_lines: List[Tuple[str, Optional[FileOperation]]] = [
+            (line, None) for line in lines
+        ]
+    else:
+        blame_lines = []
+
+    # Apply each operation
+    for op in operations:
+        if op.operation_type == "write":
+            # Write replaces all content
+            if op.content:
+                new_lines = op.content.rstrip("\n").split("\n")
+                blame_lines = [(line, op) for line in new_lines]
+
+        elif op.operation_type == "edit":
+            if op.old_string is None or op.new_string is None:
+                continue
+
+            # Reconstruct current content for searching
+            current_content = "\n".join(line for line, _ in blame_lines)
+
+            # Find where old_string occurs
+            pos = current_content.find(op.old_string)
+            if pos == -1:
+                # old_string not found, skip this operation
+                continue
+
+            # Calculate line numbers for the replacement
+            prefix = current_content[:pos]
+            prefix_lines = prefix.count("\n")
+            old_lines_count = op.old_string.count("\n") + 1
+
+            # Build new blame_lines
+            new_blame_lines = []
+
+            # Add lines before the edit (keep their original blame)
+            for i, (line, attr) in enumerate(blame_lines):
+                if i < prefix_lines:
+                    new_blame_lines.append((line, attr))
+
+            # Handle partial first line replacement
+            if prefix_lines < len(blame_lines):
+                first_affected_line = blame_lines[prefix_lines][0]
+                # Check if the prefix ends mid-line
+                last_newline = prefix.rfind("\n")
+                if last_newline == -1:
+                    prefix_in_line = prefix
+                else:
+                    prefix_in_line = prefix[last_newline + 1 :]
+
+                # Build the new content by doing the actual replacement
+                new_content = (
+                    current_content[:pos]
+                    + op.new_string
+                    + current_content[pos + len(op.old_string) :]
+                )
+                new_content_lines = new_content.rstrip("\n").split("\n")
+
+                # All lines from the edit point onward get the new attribution
+                for i, line in enumerate(new_content_lines):
+                    if i < prefix_lines:
+                        continue
+                    new_blame_lines.append((line, op))
+
+            blame_lines = new_blame_lines
+
+    # Build final content
+    final_content = "\n".join(line for line, _ in blame_lines)
+    if final_content:
+        final_content += "\n"
+
+    return final_content, blame_lines
+
+
+def build_file_states(
+    operations: List[FileOperation],
+    repo_path: Optional[str] = None,
+    session_cwd: Optional[str] = None,
+) -> Dict[str, FileState]:
+    """Build FileState objects from a list of file operations.
+
+    Args:
+        operations: List of FileOperation objects.
+        repo_path: Optional path to git repo or GitHub URL for full mode.
+        session_cwd: The session's working directory (for resolving relative paths).
+
+    Returns:
+        Dict mapping file paths to FileState objects.
+    """
+    # Group operations by file
+    file_ops: Dict[str, List[FileOperation]] = {}
+    for op in operations:
+        if op.file_path not in file_ops:
+            file_ops[op.file_path] = []
+        file_ops[op.file_path].append(op)
+
+    file_states = {}
+    for file_path, ops in file_ops.items():
+        # Sort by timestamp
+        ops.sort(key=lambda o: o.timestamp)
+
+        file_state = FileState(
+            file_path=file_path,
+            operations=ops,
+            diff_only=True,  # Default to diff-only
+        )
+
+        # Determine initial content
+        initial_content = None
+
+        # Check if first operation is a Write (file creation)
+        if ops[0].operation_type == "write":
+            # File was created during session - no initial content needed
+            initial_content = None
+            file_state.diff_only = False
+        elif repo_path:
+            # Try to get initial content from git/GitHub
+            initial_content = get_initial_file_content(
+                file_path, repo_path, session_cwd
+            )
+            if initial_content is not None:
+                file_state.initial_content = initial_content
+                file_state.diff_only = False
+
+        # Reconstruct final content with blame if we can
+        if not file_state.diff_only or ops[0].operation_type == "write":
+            final_content, blame_lines = reconstruct_file_with_blame(
+                initial_content, ops
+            )
+            file_state.final_content = final_content
+            file_state.blame_lines = blame_lines
+            file_state.diff_only = False
+
+        file_states[file_path] = file_state
+
+    return file_states
+
+
+def render_file_tree_html(file_tree: Dict[str, Any], prefix: str = "") -> str:
+    """Render file tree as HTML.
+
+    Args:
+        file_tree: Nested dict structure from build_file_tree().
+        prefix: Path prefix for building full paths.
+
+    Returns:
+        HTML string for the file tree.
+    """
+    html_parts = []
+
+    # Sort items: directories first, then files
+    items = sorted(
+        file_tree.items(),
+        key=lambda x: (
+            not isinstance(x[1], dict) or isinstance(x[1], FileState),
+            x[0].lower(),
+        ),
+    )
+
+    for name, value in items:
+        full_path = f"{prefix}/{name}" if prefix else name
+
+        if isinstance(value, FileState):
+            # It's a file
+            html_parts.append(
+                f'<li class="tree-file" data-path="{html.escape(value.file_path)}">'
+                f'<span class="tree-file-icon">📄</span>'
+                f'<span class="tree-file-name">{html.escape(name)}</span>'
+                f"</li>"
+            )
+        elif isinstance(value, dict):
+            # It's a directory
+            children_html = render_file_tree_html(value, full_path)
+            html_parts.append(
+                f'<li class="tree-dir open">'
+                f'<span class="tree-toggle">▶</span>'
+                f'<span class="tree-dir-name">{html.escape(name)}</span>'
+                f'<ul class="tree-children">{children_html}</ul>'
+                f"</li>"
+            )
+
+    return "".join(html_parts)
+
+
+def file_state_to_dict(file_state: FileState) -> Dict[str, Any]:
+    """Convert FileState to a JSON-serializable dict.
+
+    Args:
+        file_state: The FileState object.
+
+    Returns:
+        Dict suitable for JSON serialization.
+    """
+    operations = [
+        {
+            "operation_type": op.operation_type,
+            "tool_id": op.tool_id,
+            "timestamp": op.timestamp,
+            "page_num": op.page_num,
+            "msg_id": op.msg_id,
+            "content": op.content,
+            "old_string": op.old_string,
+            "new_string": op.new_string,
+        }
+        for op in file_state.operations
+    ]
+
+    blame_lines = None
+    if file_state.blame_lines:
+        blame_lines = [
+            [
+                line,
+                (
+                    {
+                        "operation_type": op.operation_type,
+                        "page_num": op.page_num,
+                        "msg_id": op.msg_id,
+                        "timestamp": op.timestamp,
+                    }
+                    if op
+                    else None
+                ),
+            ]
+            for line, op in file_state.blame_lines
+        ]
+
+    return {
+        "file_path": file_state.file_path,
+        "diff_only": file_state.diff_only,
+        "final_content": file_state.final_content,
+        "blame_lines": blame_lines,
+        "operations": operations,
+    }
+
+
+def generate_code_view_html(
+    output_dir: Path,
+    file_states: Dict[str, FileState],
+    mode: str = "diff_only",
+) -> None:
+    """Generate the code.html file.
+
+    Args:
+        output_dir: Output directory.
+        file_states: Dict of file paths to FileState objects.
+        mode: Either "full" or "diff_only".
+    """
+    # Build file tree
+    file_tree = build_file_tree(file_states)
+
+    # Render file tree HTML
+    file_tree_html = render_file_tree_html(file_tree)
+
+    # Convert file states to JSON for JavaScript
+    file_data = {path: file_state_to_dict(fs) for path, fs in file_states.items()}
+    file_data_json = json.dumps(file_data)
+
+    # Get templates
+    code_view_template = get_template("code_view.html")
+    code_view_js_template = get_template("code_view.js")
+
+    # Render JavaScript with data
+    code_view_js = code_view_js_template.render(
+        file_data_json=file_data_json,
+        mode=mode,
+    )
+
+    # Render page
+    page_content = code_view_template.render(
+        css=CSS,
+        js=JS,
+        mode=mode,
+        file_tree_html=file_tree_html,
+        code_view_js=code_view_js,
+    )
+
+    # Write file
+    (output_dir / "code.html").write_text(page_content, encoding="utf-8")
 
 
 def extract_text_from_content(content):
@@ -1014,6 +1695,75 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .search-result-content { padding: 12px; }
 .search-result mark { background: #fff59d; padding: 1px 2px; border-radius: 2px; }
 @media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
+
+/* Tab Bar */
+.tab-bar { display: flex; gap: 4px; }
+.tab { padding: 6px 16px; text-decoration: none; color: var(--text-muted); border-radius: 6px 6px 0 0; background: rgba(0,0,0,0.03); }
+.tab:hover { color: var(--text-color); background: rgba(0,0,0,0.06); }
+.tab.active { color: var(--user-border); background: var(--card-bg); font-weight: 600; }
+.header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+
+/* Code Viewer Layout */
+.code-viewer { display: flex; height: calc(100vh - 140px); gap: 16px; min-height: 400px; }
+.file-tree-panel { width: 280px; min-width: 200px; overflow-y: auto; background: var(--card-bg); border-radius: 8px; padding: 16px; flex-shrink: 0; }
+.file-tree-panel h3 { margin: 0 0 8px 0; font-size: 1rem; }
+.mode-badge { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 4px; margin-bottom: 12px; }
+.mode-badge.full-mode { background: #e8f5e9; color: #2e7d32; }
+.mode-badge.diff-mode { background: #fff3e0; color: #e65100; }
+.code-panel { flex: 1; display: flex; flex-direction: column; background: var(--card-bg); border-radius: 8px; overflow: hidden; min-width: 0; }
+#code-header { padding: 12px 16px; background: rgba(0,0,0,0.03); border-bottom: 1px solid rgba(0,0,0,0.1); }
+#current-file-path { font-family: monospace; font-weight: 600; font-size: 0.9rem; word-break: break-all; }
+#code-content { flex: 1; overflow: auto; }
+.no-file-selected { padding: 32px; text-align: center; color: var(--text-muted); }
+
+/* File Tree */
+.file-tree { list-style: none; padding: 0; margin: 0; font-size: 0.85rem; }
+.file-tree ul { list-style: none; padding-left: 16px; margin: 0; }
+.tree-dir, .tree-file { padding: 4px 8px; cursor: pointer; border-radius: 4px; }
+.tree-toggle { display: inline-block; width: 16px; transition: transform 0.2s; font-size: 0.7rem; }
+.tree-dir.open > .tree-toggle { transform: rotate(90deg); }
+.tree-children { display: none; }
+.tree-dir.open > .tree-children { display: block; }
+.tree-file:hover { background: rgba(0,0,0,0.05); }
+.tree-file.selected { background: var(--user-bg); }
+.tree-file-icon { margin-right: 6px; }
+.tree-dir-name { font-weight: 500; }
+
+/* Blame Gutter */
+.cm-blame-gutter { width: 28px; background: rgba(0,0,0,0.02); }
+.blame-marker { display: flex; justify-content: center; align-items: center; height: 100%; }
+.blame-link { display: inline-block; width: 18px; height: 18px; line-height: 18px; text-align: center; background: var(--user-border); color: white; border-radius: 3px; text-decoration: none; font-size: 0.65rem; font-weight: bold; }
+.blame-link:hover { background: #1565c0; }
+.blame-initial { color: var(--text-muted); font-size: 0.8rem; }
+
+/* CodeMirror Overrides */
+.cm-editor { height: 100%; font-size: 0.85rem; }
+.cm-scroller { overflow: auto; }
+.cm-content { font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; }
+
+/* Diff-only View */
+.diff-only-view { padding: 16px; }
+.diff-operation { margin-bottom: 20px; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; overflow: hidden; }
+.diff-header { padding: 8px 12px; background: rgba(0,0,0,0.03); display: flex; align-items: center; gap: 12px; font-size: 0.85rem; flex-wrap: wrap; }
+.diff-type { font-weight: 600; background: var(--user-border); color: white; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; }
+.diff-link { color: var(--user-border); text-decoration: none; }
+.diff-link:hover { text-decoration: underline; }
+.diff-content { margin: 0; padding: 12px; overflow-x: auto; background: var(--card-bg); font-size: 0.85rem; }
+.diff-write { background: #e8f5e9; border-left: 4px solid #4caf50; }
+.diff-edit { display: flex; flex-direction: column; }
+.diff-edit .edit-section { display: flex; }
+.diff-edit .edit-label { width: 24px; padding: 8px 4px; font-weight: bold; text-align: center; flex-shrink: 0; }
+.diff-edit .edit-old { background: #ffebee; }
+.diff-edit .edit-old .edit-label { color: #c62828; }
+.diff-edit .edit-new { background: #e8f5e9; }
+.diff-edit .edit-new .edit-label { color: #2e7d32; }
+.diff-edit .edit-content { flex: 1; margin: 0; padding: 8px; overflow-x: auto; font-size: 0.85rem; }
+
+@media (max-width: 768px) {
+    .code-viewer { flex-direction: column; height: auto; }
+    .file-tree-panel { width: 100%; max-height: 200px; }
+    .code-panel { min-height: 400px; }
+}
 """
 
 JS = """
@@ -1153,7 +1903,9 @@ def generate_index_pagination_html(total_pages):
     return _macros.index_pagination(total_pages)
 
 
-def generate_html(json_path, output_dir, github_repo=None):
+def generate_html(
+    json_path, output_dir, github_repo=None, code_view=False, repo_path=None
+):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
 
@@ -1212,6 +1964,20 @@ def generate_html(json_path, output_dir, github_repo=None):
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
 
+    # Get session cwd for code view file path resolution
+    session_cwd = None
+    for entry in loglines:
+        if entry.get("type") == "system" and "cwd" in entry.get("message", {}):
+            session_cwd = entry["message"]["cwd"]
+            break
+
+    # Determine if code view will be generated (for tab navigation)
+    has_code_view = False
+    file_operations = None
+    if code_view:
+        file_operations = extract_file_operations(loglines, conversations)
+        has_code_view = len(file_operations) > 0
+
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -1236,6 +2002,7 @@ def generate_html(json_path, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            has_code_view=has_code_view,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1320,12 +2087,22 @@ def generate_html(json_path, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        has_code_view=has_code_view,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
     print(
         f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
     )
+
+    # Generate code view if requested
+    if has_code_view:
+        file_states = build_file_states(
+            file_operations, repo_path=repo_path, session_cwd=session_cwd
+        )
+        mode = "full" if repo_path else "diff_only"
+        generate_code_view_html(output_dir, file_states, mode=mode)
+        print(f"Generated code.html ({len(file_states)} files)")
 
 
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
@@ -1350,7 +2127,7 @@ def cli():
 )
 @click.option(
     "--repo",
-    help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
+    help="Git repo: local path, GitHub URL, or owner/name. Used for commit links and code viewer file history.",
 )
 @click.option(
     "--gist",
@@ -1374,7 +2151,14 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--code-view",
+    is_flag=True,
+    help="Generate a code viewer tab showing files modified during the session.",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, code_view
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1425,7 +2209,15 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
+    # Parse --repo to get GitHub repo name and/or local path
+    github_repo, repo_path = parse_repo_value(repo)
+    generate_html(
+        session_file,
+        output,
+        github_repo=github_repo,
+        code_view=code_view,
+        repo_path=repo_path,
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1453,7 +2245,7 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
 
 
 @cli.command("json")
-@click.argument("json_file", type=click.Path(exists=True))
+@click.argument("json_file")
 @click.option(
     "-o",
     "--output",
@@ -1468,7 +2260,7 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
 )
 @click.option(
     "--repo",
-    help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
+    help="Git repo: local path, GitHub URL, or owner/name. Used for commit links and code viewer file history.",
 )
 @click.option(
     "--gist",
@@ -1487,8 +2279,30 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
-    """Convert a Claude Code session JSON/JSONL file to HTML."""
+@click.option(
+    "--code-view",
+    is_flag=True,
+    help="Generate a code viewer tab showing files modified during the session.",
+)
+def json_cmd(
+    json_file, output, output_auto, repo, gist, include_json, open_browser, code_view
+):
+    """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
+    # Handle URL input
+    temp_file = None
+    original_input = json_file
+    if is_url(json_file):
+        click.echo(f"Fetching session from URL...")
+        temp_file = fetch_session_from_url(json_file)
+        json_file = str(temp_file)
+    else:
+        # Validate local file exists
+        if not Path(json_file).exists():
+            raise click.ClickException(f"File not found: {json_file}")
+
+    # Parse --repo to get GitHub repo name and/or local path
+    github_repo, repo_path = parse_repo_value(repo)
+
     # Determine output directory and whether to open browser
     # If no -o specified, use temp dir and open browser by default
     auto_open = output is None and not gist and not output_auto
@@ -1500,16 +2314,30 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         output = Path(tempfile.gettempdir()) / f"claude-session-{Path(json_file).stem}"
 
     output = Path(output)
-    generate_html(json_file, output, github_repo=repo)
+    generate_html(
+        json_file,
+        output,
+        github_repo=github_repo,
+        code_view=code_view,
+        repo_path=repo_path,
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
 
     # Copy JSON file to output directory if requested
-    if include_json:
+    if include_json and not is_url(original_input):
         output.mkdir(exist_ok=True)
         json_source = Path(json_file)
         json_dest = output / json_source.name
+        shutil.copy(json_file, json_dest)
+        json_size_kb = json_dest.stat().st_size / 1024
+        click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
+    elif include_json and is_url(original_input):
+        # For URLs, copy the temp file with a meaningful name
+        output.mkdir(exist_ok=True)
+        url_name = Path(original_input.split("?")[0]).name or "session.jsonl"
+        json_dest = output / url_name
         shutil.copy(json_file, json_dest)
         json_size_kb = json_dest.stat().st_size / 1024
         click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
@@ -1574,7 +2402,9 @@ def format_session_for_display(session_data):
     return f"{session_id}  {created_at[:19] if created_at else 'N/A':19}  {title}"
 
 
-def generate_html_from_session_data(session_data, output_dir, github_repo=None):
+def generate_html_from_session_data(
+    session_data, output_dir, github_repo=None, code_view=False, repo_path=None
+):
     """Generate HTML from session data dict (instead of file path)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
@@ -1627,6 +2457,20 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
 
+    # Get session cwd for code view file path resolution
+    session_cwd = None
+    for entry in loglines:
+        if entry.get("type") == "system" and "cwd" in entry.get("message", {}):
+            session_cwd = entry["message"]["cwd"]
+            break
+
+    # Determine if code view will be generated (for tab navigation)
+    has_code_view = False
+    file_operations = None
+    if code_view:
+        file_operations = extract_file_operations(loglines, conversations)
+        has_code_view = len(file_operations) > 0
+
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -1651,6 +2495,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            has_code_view=has_code_view,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1735,12 +2580,22 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        has_code_view=has_code_view,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
     click.echo(
         f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
     )
+
+    # Generate code view if requested
+    if has_code_view:
+        file_states = build_file_states(
+            file_operations, repo_path=repo_path, session_cwd=session_cwd
+        )
+        mode = "full" if repo_path else "diff_only"
+        generate_code_view_html(output_dir, file_states, mode=mode)
+        click.echo(f"Generated code.html ({len(file_states)} files)")
 
 
 @cli.command("web")
@@ -1763,7 +2618,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
 )
 @click.option(
     "--repo",
-    help="GitHub repo (owner/name) for commit links. Auto-detected from git push output if not specified.",
+    help="Git repo: local path, GitHub URL, or owner/name. Used for commit links and code viewer file history.",
 )
 @click.option(
     "--gist",
@@ -1782,6 +2637,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
+@click.option(
+    "--code-view",
+    is_flag=True,
+    help="Generate a code viewer tab showing files modified during the session.",
+)
 def web_cmd(
     session_id,
     output,
@@ -1792,6 +2652,7 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    code_view,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -1863,7 +2724,15 @@ def web_cmd(
 
     output = Path(output)
     click.echo(f"Generating HTML in {output}/...")
-    generate_html_from_session_data(session_data, output, github_repo=repo)
+    # Parse --repo to get GitHub repo name and/or local path
+    github_repo, repo_path = parse_repo_value(repo)
+    generate_html_from_session_data(
+        session_data,
+        output,
+        github_repo=github_repo,
+        code_view=code_view,
+        repo_path=repo_path,
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")

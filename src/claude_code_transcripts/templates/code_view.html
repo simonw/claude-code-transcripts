@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Claude Code transcript - Code{% endblock %}
+
+{% block content %}
+        <div class="header-row">
+            <h1><a href="index.html" style="color: inherit; text-decoration: none;">Claude Code transcript</a></h1>
+            <nav class="tab-bar">
+                <a href="index.html" class="tab">Transcript</a>
+                <a href="code.html" class="tab active">Code</a>
+            </nav>
+        </div>
+
+        <div class="code-viewer">
+            <div class="file-tree-panel">
+                <h3>Files Modified</h3>
+                <div class="mode-badge {{ 'full-mode' if mode == 'full' else 'diff-mode' }}">
+                    {{ 'Full View' if mode == 'full' else 'Diff Only' }}
+                </div>
+                <ul class="file-tree" id="file-tree">
+                    {{ file_tree_html|safe }}
+                </ul>
+            </div>
+
+            <div class="code-panel">
+                <div id="code-header">
+                    <span id="current-file-path">Select a file</span>
+                </div>
+                <div id="code-content">
+                    <div class="no-file-selected">
+                        <p>Select a file from the tree to view its contents</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CodeMirror 6 from CDN -->
+        <script type="module">
+{{ code_view_js|safe }}
+        </script>
+{%- endblock %}
