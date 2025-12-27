@@ -1860,9 +1860,19 @@ def generate_html(
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
         messages_html = []
+        # Count total messages for this page for progress display
+        total_page_messages = sum(len(c["messages"]) for c in page_convs)
+        msg_count = 0
         for conv in page_convs:
             is_first = True
             for log_type, message_json, timestamp in conv["messages"]:
+                msg_count += 1
+                if total_page_messages > 50:
+                    print(
+                        f"\rPage {page_num}/{total_pages}: rendering message {msg_count}/{total_page_messages}...",
+                        end="",
+                        flush=True,
+                    )
                 msg_html = render_message(log_type, message_json, timestamp)
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
@@ -1870,6 +1880,8 @@ def generate_html(
                         msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
                     messages_html.append(msg_html)
                 is_first = False
+        if total_page_messages > 50:
+            print("\r" + " " * 60 + "\r", end="")  # Clear the progress line
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
@@ -2343,9 +2355,18 @@ def generate_html_from_session_data(
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
         messages_html = []
+        # Count total messages for this page for progress display
+        total_page_messages = sum(len(c["messages"]) for c in page_convs)
+        msg_count = 0
         for conv in page_convs:
             is_first = True
             for log_type, message_json, timestamp in conv["messages"]:
+                msg_count += 1
+                if total_page_messages > 50:
+                    click.echo(
+                        f"\rPage {page_num}/{total_pages}: rendering message {msg_count}/{total_page_messages}...",
+                        nl=False,
+                    )
                 msg_html = render_message(log_type, message_json, timestamp)
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
@@ -2353,6 +2374,8 @@ def generate_html_from_session_data(
                         msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
                     messages_html.append(msg_html)
                 is_first = False
+        if total_page_messages > 50:
+            click.echo("\r" + " " * 60 + "\r", nl=False)  # Clear the progress line
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
