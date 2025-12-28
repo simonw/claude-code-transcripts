@@ -335,8 +335,15 @@ def build_file_history_repo(
                 if not fetched and Path(op.file_path).exists():
                     try:
                         full_path.write_text(Path(op.file_path).read_text())
+                        fetched = True
                     except Exception:
                         pass
+
+                # Commit the initial content first (no metadata = pre-session)
+                # This allows git blame to correctly attribute unchanged lines
+                if fetched:
+                    repo.index.add([rel_path])
+                    repo.index.commit("{}")  # Empty metadata = pre-session content
 
             if full_path.exists():
                 content = full_path.read_text()
