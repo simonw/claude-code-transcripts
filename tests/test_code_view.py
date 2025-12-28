@@ -433,6 +433,142 @@ class TestReconstructFileWithBlame:
         assert "return x + y" in final_content
 
 
+class TestGitBlameAttribution:
+    """Tests for git-based blame attribution."""
+
+    def test_write_operation_attributes_all_lines(self):
+        """Test that Write operations attribute all lines to the operation."""
+        from claude_code_transcripts import (
+            build_file_history_repo,
+            get_file_blame_ranges,
+            FileOperation,
+        )
+        import shutil
+
+        write_op = FileOperation(
+            file_path="/project/test.py",
+            operation_type="write",
+            tool_id="toolu_001",
+            timestamp="2025-12-24T10:00:00.000Z",
+            page_num=1,
+            msg_id="msg-001",
+            content="line1\nline2\nline3\n",
+        )
+
+        repo, temp_dir, path_mapping = build_file_history_repo([write_op])
+        try:
+            rel_path = path_mapping[write_op.file_path]
+            blame_ranges = get_file_blame_ranges(repo, rel_path)
+
+            # All lines should be attributed to the write operation
+            assert len(blame_ranges) == 1
+            assert blame_ranges[0].start_line == 1
+            assert blame_ranges[0].end_line == 3
+            assert blame_ranges[0].msg_id == "msg-001"
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_edit_only_attributes_changed_lines(self, tmp_path):
+        """Test that Edit operations only attribute changed lines, not context."""
+        from claude_code_transcripts import (
+            build_file_history_repo,
+            get_file_blame_ranges,
+            FileOperation,
+        )
+        import shutil
+
+        # Create a file on disk to simulate pre-existing content
+        test_file = tmp_path / "existing.py"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
+
+        edit_op = FileOperation(
+            file_path=str(test_file),
+            operation_type="edit",
+            tool_id="toolu_001",
+            timestamp="2025-12-24T10:00:00.000Z",
+            page_num=1,
+            msg_id="msg-001",
+            old_string="line3",
+            new_string="MODIFIED",
+        )
+
+        repo, temp_dir, path_mapping = build_file_history_repo([edit_op])
+        try:
+            rel_path = path_mapping[edit_op.file_path]
+            blame_ranges = get_file_blame_ranges(repo, rel_path)
+
+            # Should have multiple ranges: pre-edit lines and edited line
+            # Find the range with msg_id (the edit)
+            edit_ranges = [r for r in blame_ranges if r.msg_id == "msg-001"]
+            pre_ranges = [r for r in blame_ranges if not r.msg_id]
+
+            # The edit should only cover the changed line
+            assert len(edit_ranges) == 1
+            assert edit_ranges[0].start_line == edit_ranges[0].end_line  # Single line
+
+            # Pre-existing lines should have no msg_id
+            assert len(pre_ranges) >= 1
+            total_pre_lines = sum(r.end_line - r.start_line + 1 for r in pre_ranges)
+            assert total_pre_lines == 4  # lines 1,2,4,5 unchanged
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_multiple_edits_track_separately(self):
+        """Test that multiple edits to the same file are tracked separately."""
+        from claude_code_transcripts import (
+            build_file_history_repo,
+            get_file_blame_ranges,
+            FileOperation,
+        )
+        import shutil
+
+        write_op = FileOperation(
+            file_path="/project/test.py",
+            operation_type="write",
+            tool_id="toolu_001",
+            timestamp="2025-12-24T10:00:00.000Z",
+            page_num=1,
+            msg_id="msg-001",
+            content="aaa\nbbb\nccc\n",
+        )
+
+        edit1 = FileOperation(
+            file_path="/project/test.py",
+            operation_type="edit",
+            tool_id="toolu_002",
+            timestamp="2025-12-24T10:01:00.000Z",
+            page_num=1,
+            msg_id="msg-002",
+            old_string="aaa",
+            new_string="AAA",
+        )
+
+        edit2 = FileOperation(
+            file_path="/project/test.py",
+            operation_type="edit",
+            tool_id="toolu_003",
+            timestamp="2025-12-24T10:02:00.000Z",
+            page_num=1,
+            msg_id="msg-003",
+            old_string="ccc",
+            new_string="CCC",
+        )
+
+        repo, temp_dir, path_mapping = build_file_history_repo([write_op, edit1, edit2])
+        try:
+            rel_path = path_mapping[write_op.file_path]
+            blame_ranges = get_file_blame_ranges(repo, rel_path)
+
+            # Collect msg_ids from all ranges
+            msg_ids = set(r.msg_id for r in blame_ranges if r.msg_id)
+
+            # Should have at least edit1 and edit2 tracked
+            assert "msg-002" in msg_ids  # First edit
+            assert "msg-003" in msg_ids  # Second edit
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 class TestGenerateCodeViewHtml:
     """Tests for generate_code_view_html function."""
 
