@@ -13,7 +13,12 @@
 
         <div class="code-viewer three-pane">
             <div class="file-tree-panel" id="file-tree-panel">
-                <h3>Files Modified</h3>
+                <div class="panel-header">
+                    <h3>Files Modified</h3>
+                    <button class="collapse-btn" id="collapse-file-tree" title="Collapse file tree">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    </button>
+                </div>
                 <ul class="file-tree" id="file-tree">
                     {{ file_tree_html|safe }}
                 </ul>
@@ -36,6 +41,12 @@
 
             <div class="transcript-panel" id="transcript-panel">
                 <h3>Transcript</h3>
+                <div id="pinned-user-message" class="pinned-user-message" style="display: none;">
+                    <div class="pinned-user-message-inner">
+                        <div class="pinned-user-message-label">User prompt:</div>
+                        <div class="pinned-user-content"></div>
+                    </div>
+                </div>
                 <div id="transcript-content">
                     <!-- Messages rendered dynamically via JS for performance -->
                 </div>

@@ -304,13 +304,101 @@ def find_commit_before_timestamp(file_repo: Repo, timestamp: str) -> Optional[An
     return None
 
 
+def get_commits_during_session(
+    file_repo: Repo, start_timestamp: str, end_timestamp: str
+) -> List[Any]:
+    """Get all commits that happened during the session timeframe.
+
+    Args:
+        file_repo: GitPython Repo object.
+        start_timestamp: ISO format timestamp for session start.
+        end_timestamp: ISO format timestamp for session end.
+
+    Returns:
+        List of commit objects in chronological order (oldest first).
+    """
+    from datetime import datetime, timezone
+
+    commits = []
+
+    try:
+        # Parse timestamps
+        start_ts = start_timestamp.replace("Z", "+00:00")
+        end_ts = end_timestamp.replace("Z", "+00:00")
+        start_dt = datetime.fromisoformat(start_ts)
+        end_dt = datetime.fromisoformat(end_ts)
+
+        for commit in file_repo.iter_commits():
+            commit_dt = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
+
+            # Skip commits after session end
+            if commit_dt > end_dt:
+                continue
+
+            # Stop when we reach commits before session start
+            if commit_dt < start_dt:
+                break
+
+            commits.append(commit)
+
+    except Exception:
+        pass
+
+    # Return in chronological order (oldest first)
+    return list(reversed(commits))
+
+
+def find_file_content_at_timestamp(
+    file_repo: Repo, file_rel_path: str, timestamp: str, session_commits: List[Any]
+) -> Optional[str]:
+    """Find the file content from the most recent commit at or before the timestamp.
+
+    Args:
+        file_repo: GitPython Repo object.
+        file_rel_path: Relative path to the file within the repo.
+        timestamp: ISO format timestamp to search for.
+        session_commits: List of commits during the session (chronological order).
+
+    Returns:
+        File content as string, or None if not found.
+    """
+    from datetime import datetime, timezone
+
+    try:
+        ts = timestamp.replace("Z", "+00:00")
+        target_dt = datetime.fromisoformat(ts)
+
+        # Find the most recent commit at or before the target timestamp
+        best_commit = None
+        for commit in session_commits:
+            commit_dt = datetime.fromtimestamp(commit.committed_date, tz=timezone.utc)
+            if commit_dt <= target_dt:
+                best_commit = commit
+            else:
+                break  # Commits are chronological, so we can stop
+
+        if best_commit:
+            try:
+                blob = best_commit.tree / file_rel_path
+                return blob.data_stream.read().decode("utf-8")
+            except (KeyError, TypeError):
+                pass  # File doesn't exist in that commit
+
+    except Exception:
+        pass
+
+    return None
+
+
 def build_file_history_repo(
     operations: List[FileOperation],
 ) -> Tuple[Repo, Path, Dict[str, str]]:
     """Create a temp git repo that replays all file operations as commits.
 
-    For Edit operations on files not yet in the temp repo, attempts to fetch
-    initial content from the file's git repo (if any) or from disk.
+    For Edit operations, uses intermediate commits from the actual repo to
+    resync state when our reconstruction might have diverged from reality.
+    This handles cases where edits fail to match our reconstructed content
+    but succeeded on the actual file.
 
     Args:
         operations: List of FileOperation objects in chronological order.
@@ -335,17 +423,79 @@ def build_file_history_repo(
     # Sort operations by timestamp
     sorted_ops = sorted(operations, key=lambda o: o.timestamp)
 
+    if not sorted_ops:
+        return repo, temp_dir, path_mapping
+
+    # Get session timeframe
+    session_start = sorted_ops[0].timestamp
+    session_end = sorted_ops[-1].timestamp
+
     # Build a map of file path -> earliest operation timestamp
-    # This helps us find the state before the session started
     earliest_op_by_file: Dict[str, str] = {}
     for op in sorted_ops:
         if op.file_path not in earliest_op_by_file:
             earliest_op_by_file[op.file_path] = op.timestamp
 
+    # Try to find the actual git repo and get commits during the session
+    # We'll use the first file's path to find the repo
+    actual_repo = None
+    actual_repo_root = None
+    session_commits = []
+
+    for op in sorted_ops:
+        actual_repo_root = find_git_repo_root(str(Path(op.file_path).parent))
+        if actual_repo_root:
+            try:
+                actual_repo = Repo(actual_repo_root)
+                session_commits = get_commits_during_session(
+                    actual_repo, session_start, session_end
+                )
+                break
+            except InvalidGitRepositoryError:
+                pass
+
+    # Track the last commit we synced from for each file
+    # This helps us know when to resync
+    last_sync_commit_by_file: Dict[str, Optional[str]] = {}
+
     for op in sorted_ops:
         rel_path = path_mapping.get(op.file_path, op.file_path)
         full_path = temp_dir / rel_path
         full_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # For edit operations, try to sync from commits when our reconstruction diverges
+        if op.operation_type == "edit" and actual_repo and actual_repo_root:
+            file_rel_path = os.path.relpath(op.file_path, actual_repo_root)
+            old_str = op.old_string or ""
+
+            if old_str and full_path.exists():
+                our_content = full_path.read_text()
+
+                # If old_string doesn't match our content, we may have diverged
+                if old_str not in our_content:
+                    # Try to find content where old_string DOES exist
+                    # First, check intermediate commits during the session
+                    commit_content = find_file_content_at_timestamp(
+                        actual_repo, file_rel_path, op.timestamp, session_commits
+                    )
+
+                    if commit_content and old_str in commit_content:
+                        # Resync from this commit
+                        full_path.write_text(commit_content)
+                        repo.index.add([rel_path])
+                        repo.index.commit("{}")  # Sync commit
+                    else:
+                        # Try HEAD - the final state should be correct
+                        try:
+                            blob = actual_repo.head.commit.tree / file_rel_path
+                            head_content = blob.data_stream.read().decode("utf-8")
+                            if old_str in head_content:
+                                # Resync from HEAD
+                                full_path.write_text(head_content)
+                                repo.index.add([rel_path])
+                                repo.index.commit("{}")  # Sync commit
+                        except (KeyError, TypeError):
+                            pass  # File not in HEAD
 
         if op.operation_type == "write":
             full_path.write_text(op.content or "")
@@ -426,6 +576,28 @@ def build_file_history_repo(
             }
         )
         repo.index.commit(metadata)
+
+    # Final sync: for files where our reconstruction diverged from HEAD,
+    # replace with HEAD's content to ensure correct final state
+    if actual_repo and actual_repo_root:
+        for orig_path, rel_path in path_mapping.items():
+            full_path = temp_dir / rel_path
+            if not full_path.exists():
+                continue
+
+            try:
+                file_rel_path = os.path.relpath(orig_path, actual_repo_root)
+                blob = actual_repo.head.commit.tree / file_rel_path
+                head_content = blob.data_stream.read().decode("utf-8")
+                our_content = full_path.read_text()
+
+                # If content differs, use HEAD's content
+                if our_content != head_content:
+                    full_path.write_text(head_content)
+                    repo.index.add([rel_path])
+                    repo.index.commit("{}")  # Final sync commit
+            except (KeyError, TypeError, UnicodeDecodeError):
+                pass  # File not in HEAD or not text
 
     return repo, temp_dir, path_mapping
 

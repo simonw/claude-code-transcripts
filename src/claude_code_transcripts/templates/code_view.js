@@ -9,6 +9,37 @@ import {css} from 'https://esm.sh/@codemirror/lang-css@6';
 import {json} from 'https://esm.sh/@codemirror/lang-json@6';
 import {markdown} from 'https://esm.sh/@codemirror/lang-markdown@6';
 
+// Format timestamps in local timezone with nice format
+function formatTimestamp(date) {
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const isYesterday = date.toDateString() === yesterday.toDateString();
+    const isThisYear = date.getFullYear() === now.getFullYear();
+
+    const timeStr = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+    if (isToday) {
+        return timeStr;
+    } else if (isYesterday) {
+        return 'Yesterday ' + timeStr;
+    } else if (isThisYear) {
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr;
+    } else {
+        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) + ' ' + timeStr;
+    }
+}
+
+function formatTimestamps(container) {
+    container.querySelectorAll('time[data-timestamp]').forEach(function(el) {
+        const timestamp = el.getAttribute('data-timestamp');
+        const date = new Date(timestamp);
+        el.textContent = formatTimestamp(date);
+        el.title = date.toLocaleString(undefined, { dateStyle: 'full', timeStyle: 'long' });
+    });
+}
+
 // File data embedded in page
 const fileData = {{ file_data_json|safe }};
 
@@ -41,13 +72,22 @@ function createBlameTooltip() {
     return tooltip;
 }
 
-function showBlameTooltip(event, text) {
+function showBlameTooltip(event, html) {
     if (!blameTooltip) {
         blameTooltip = createBlameTooltip();
     }
-    if (!text) return;
+    if (!html) return;
 
-    blameTooltip.textContent = text;
+    // Set width to 75% of code panel, with min/max bounds
+    const codePanel = document.getElementById('code-panel');
+    if (codePanel) {
+        const codePanelWidth = codePanel.offsetWidth;
+        const tooltipWidth = Math.min(Math.max(codePanelWidth * 0.75, 300), 800);
+        blameTooltip.style.maxWidth = tooltipWidth + 'px';
+    }
+
+    blameTooltip.innerHTML = html;
+    formatTimestamps(blameTooltip);
     blameTooltip.style.display = 'block';
 
     // Position near cursor but within viewport
@@ -284,8 +324,8 @@ function createEditor(container, content, blameRanges, filePath) {
                 const rangeIndex = line.getAttribute('data-range-index');
                 if (rangeIndex !== null) {
                     const range = blameRanges[parseInt(rangeIndex)];
-                    if (range && range.user_text) {
-                        showBlameTooltip(event, range.user_text);
+                    if (range && range.user_html) {
+                        showBlameTooltip(event, range.user_html);
                     }
                 }
             }
@@ -304,8 +344,8 @@ function createEditor(container, content, blameRanges, filePath) {
             if (line && line.getAttribute('data-range-index') !== null) {
                 const rangeIndex = parseInt(line.getAttribute('data-range-index'));
                 const range = blameRanges[rangeIndex];
-                if (range && range.user_text && blameTooltip && blameTooltip.style.display !== 'none') {
-                    showBlameTooltip(event, range.user_text);
+                if (range && range.user_html && blameTooltip && blameTooltip.style.display !== 'none') {
+                    showBlameTooltip(event, range.user_html);
                 }
             }
         }
@@ -390,9 +430,10 @@ function renderMessagesUpTo(targetIndex) {
         renderedCount++;
     }
 
-    // Initialize truncation for newly rendered messages
+    // Initialize truncation and format timestamps for newly rendered messages
     if (renderedCount > startIndex) {
         initTruncation(transcriptContent);
+        formatTimestamps(transcriptContent);
     }
 }
 
@@ -402,9 +443,26 @@ function renderNextChunk() {
     renderMessagesUpTo(targetIndex);
 }
 
+// Calculate the height of sticky elements at the top of the transcript panel
+function getStickyHeaderOffset() {
+    const panel = document.getElementById('transcript-panel');
+    const h3 = panel?.querySelector('h3');
+    const pinnedMsg = document.getElementById('pinned-user-message');
+
+    let offset = 0;
+    if (h3) {
+        offset += h3.offsetHeight;
+    }
+    if (pinnedMsg && pinnedMsg.style.display !== 'none') {
+        offset += pinnedMsg.offsetHeight;
+    }
+    return offset + 8; // Extra padding for breathing room
+}
+
 // Scroll to a message in the transcript by msg_id
 function scrollToMessage(msgId) {
     const transcriptContent = document.getElementById('transcript-content');
+    const transcriptPanel = document.getElementById('transcript-panel');
 
     // Ensure the message is rendered first
     const msgIndex = msgIdToIndex.get(msgId);
@@ -420,8 +478,16 @@ function scrollToMessage(msgId) {
         });
         // Add highlight to this message
         message.classList.add('highlighted');
-        // Scroll to it
-        message.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Calculate scroll position accounting for sticky headers
+        const stickyOffset = getStickyHeaderOffset();
+        const messageTop = message.offsetTop;
+        const targetScroll = messageTop - stickyOffset;
+
+        transcriptPanel.scrollTo({
+            top: targetScroll,
+            behavior: 'smooth'
+        });
     }
 }
 
@@ -557,6 +623,23 @@ function initResize() {
 
 initResize();
 
+// File tree collapse/expand
+const collapseBtn = document.getElementById('collapse-file-tree');
+const fileTreePanel = document.getElementById('file-tree-panel');
+const resizeLeftHandle = document.getElementById('resize-left');
+
+if (collapseBtn && fileTreePanel) {
+    collapseBtn.addEventListener('click', () => {
+        fileTreePanel.classList.toggle('collapsed');
+        // Hide/show resize handle when collapsed
+        if (resizeLeftHandle) {
+            resizeLeftHandle.style.display = fileTreePanel.classList.contains('collapsed') ? 'none' : '';
+        }
+        // Update button title
+        collapseBtn.title = fileTreePanel.classList.contains('collapsed') ? 'Expand file tree' : 'Collapse file tree';
+    });
+}
+
 // Chunked transcript rendering
 // Render initial chunk of messages
 renderNextChunk();
@@ -574,3 +657,104 @@ if (sentinel) {
     });
     observer.observe(sentinel);
 }
+
+// Sticky user message header
+const pinnedUserMessage = document.getElementById('pinned-user-message');
+const pinnedUserContent = pinnedUserMessage?.querySelector('.pinned-user-content');
+const transcriptPanel = document.getElementById('transcript-panel');
+const transcriptContent = document.getElementById('transcript-content');
+let currentPinnedMessage = null;
+
+function extractUserMessageText(messageEl) {
+    // Get the text content from the user message, truncated for the pinned header
+    const contentEl = messageEl.querySelector('.message-content');
+    if (!contentEl) return '';
+
+    // Get text, strip extra whitespace
+    let text = contentEl.textContent.trim();
+    // Truncate if too long
+    if (text.length > 150) {
+        text = text.substring(0, 150) + '...';
+    }
+    return text;
+}
+
+function updatePinnedUserMessage() {
+    if (!pinnedUserMessage || !transcriptContent || !transcriptPanel) return;
+
+    // Find all user messages currently in the DOM
+    const userMessages = transcriptContent.querySelectorAll('.message.user');
+    if (userMessages.length === 0) {
+        pinnedUserMessage.style.display = 'none';
+        currentPinnedMessage = null;
+        return;
+    }
+
+    // Get the scroll container's position (transcript-panel has the scroll)
+    const panelRect = transcriptPanel.getBoundingClientRect();
+    const headerHeight = transcriptPanel.querySelector('h3')?.offsetHeight || 0;
+    const pinnedHeight = pinnedUserMessage.offsetHeight || 0;
+    const topThreshold = panelRect.top + headerHeight + pinnedHeight + 10;
+
+    // Find the user message that should be pinned:
+    // The most recent user message whose top has scrolled past the threshold
+    let messageToPin = null;
+
+    for (const msg of userMessages) {
+        const msgRect = msg.getBoundingClientRect();
+        // If this message's top is above the threshold, it's a candidate
+        if (msgRect.top < topThreshold) {
+            messageToPin = msg;
+        } else {
+            // Messages are in order, so once we find one below threshold, stop
+            break;
+        }
+    }
+
+    // If the pinned message is still partially visible, check for a previous one
+    if (messageToPin) {
+        const msgRect = messageToPin.getBoundingClientRect();
+        // If bottom of message is still visible below the header,
+        // we might need the previous user message instead
+        if (msgRect.bottom > topThreshold) {
+            const msgArray = Array.from(userMessages);
+            const idx = msgArray.indexOf(messageToPin);
+            if (idx > 0) {
+                // Use the previous user message
+                messageToPin = msgArray[idx - 1];
+            } else {
+                // No previous message, don't pin anything
+                messageToPin = null;
+            }
+        }
+    }
+
+    // Update the pinned header
+    if (messageToPin && messageToPin !== currentPinnedMessage) {
+        currentPinnedMessage = messageToPin;
+        const text = extractUserMessageText(messageToPin);
+        pinnedUserContent.textContent = text;
+        pinnedUserMessage.style.display = 'block';
+
+        // Add click handler to scroll to the original message
+        pinnedUserMessage.onclick = () => {
+            messageToPin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        };
+    } else if (!messageToPin) {
+        pinnedUserMessage.style.display = 'none';
+        currentPinnedMessage = null;
+    }
+}
+
+// Throttle scroll handler for performance
+let scrollTimeout = null;
+transcriptPanel?.addEventListener('scroll', () => {
+    if (scrollTimeout) return;
+    scrollTimeout = setTimeout(() => {
+        updatePinnedUserMessage();
+        scrollTimeout = null;
+    }, 16); // ~60fps
+});
+
+// Initial update after first render
+setTimeout(updatePinnedUserMessage, 100);
