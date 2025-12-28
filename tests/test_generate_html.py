@@ -1071,6 +1071,28 @@ class TestParseSessionFile:
         )
         assert tool_result_entry["toolUseResult"]["filePath"] == "/test.py"
 
+    def test_jsonl_preserves_is_meta(self, tmp_path):
+        """Test that isMeta field is preserved in parsed entries.
+
+        Skill expansion messages have isMeta=True and should be treated as
+        continuations for prompt numbering.
+        """
+        jsonl_content = """{"type":"user","timestamp":"2025-01-01T10:00:00Z","message":{"role":"user","content":"Use the test skill"}}
+{"type":"assistant","timestamp":"2025-01-01T10:00:05Z","message":{"role":"assistant","content":[{"type":"text","text":"Invoking skill..."}]}}
+{"type":"user","timestamp":"2025-01-01T10:00:10Z","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"Base directory for this skill: /path/to/skill"}]}}
+{"type":"assistant","timestamp":"2025-01-01T10:00:15Z","message":{"role":"assistant","content":[{"type":"text","text":"Working on it..."}]}}"""
+
+        jsonl_file = tmp_path / "test.jsonl"
+        jsonl_file.write_text(jsonl_content)
+
+        result = parse_session_file(jsonl_file)
+
+        # Find the skill expansion entry (isMeta=True)
+        meta_entry = [e for e in result["loglines"] if e.get("isMeta")]
+        assert len(meta_entry) == 1
+        assert meta_entry[0]["isMeta"] is True
+        assert "Base directory for this skill" in str(meta_entry[0]["message"])
+
 
 class TestGetSessionSummary:
     """Tests for get_session_summary which extracts summary from session files."""
