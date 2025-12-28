@@ -647,7 +647,8 @@ def get_file_content_from_repo(repo: Repo, file_path: str) -> Optional[str]:
     try:
         blob = repo.head.commit.tree / file_path
         return blob.data_stream.read().decode("utf-8")
-    except (KeyError, TypeError):
+    except (KeyError, TypeError, ValueError):
+        # ValueError occurs when repo has no commits yet
         return None
 
 
