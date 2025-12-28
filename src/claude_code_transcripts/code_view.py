@@ -18,6 +18,35 @@ from git.exc import InvalidGitRepositoryError
 
 
 # ============================================================================
+# Helper Functions
+# ============================================================================
+
+
+def group_operations_by_file(
+    operations: List["FileOperation"],
+) -> Dict[str, List["FileOperation"]]:
+    """Group operations by file path and sort each group by timestamp.
+
+    Args:
+        operations: List of FileOperation objects.
+
+    Returns:
+        Dict mapping file paths to lists of FileOperation objects, sorted by timestamp.
+    """
+    file_ops: Dict[str, List["FileOperation"]] = {}
+    for op in operations:
+        if op.file_path not in file_ops:
+            file_ops[op.file_path] = []
+        file_ops[op.file_path].append(op)
+
+    # Sort each file's operations by timestamp
+    for ops in file_ops.values():
+        ops.sort(key=lambda o: o.timestamp)
+
+    return file_ops
+
+
+# ============================================================================
 # Data Structures
 # ============================================================================
 
@@ -602,17 +631,11 @@ def build_file_states(
     Returns:
         Dict mapping file paths to FileState objects.
     """
-    # Group operations by file
-    file_ops: Dict[str, List[FileOperation]] = {}
-    for op in operations:
-        if op.file_path not in file_ops:
-            file_ops[op.file_path] = []
-        file_ops[op.file_path].append(op)
+    # Group operations by file (already sorted by timestamp)
+    file_ops = group_operations_by_file(operations)
 
     file_states = {}
     for file_path, ops in file_ops.items():
-        # Sort by timestamp
-        ops.sort(key=lambda o: o.timestamp)
 
         # Determine status based on first operation
         status = "added" if ops[0].operation_type == "write" else "modified"
@@ -777,16 +800,8 @@ def generate_code_view_html(
         # Build file data for each file
         file_data = {}
 
-        # Group operations by file
-        ops_by_file: Dict[str, List[FileOperation]] = {}
-        for op in operations:
-            if op.file_path not in ops_by_file:
-                ops_by_file[op.file_path] = []
-            ops_by_file[op.file_path].append(op)
-
-        # Sort each file's operations by timestamp
-        for file_path in ops_by_file:
-            ops_by_file[file_path].sort(key=lambda o: o.timestamp)
+        # Group operations by file (already sorted by timestamp)
+        ops_by_file = group_operations_by_file(operations)
 
         for orig_path, file_ops in ops_by_file.items():
             rel_path = path_mapping.get(orig_path, orig_path)

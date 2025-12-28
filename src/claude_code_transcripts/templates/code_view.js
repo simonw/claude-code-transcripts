@@ -93,6 +93,19 @@ const rangeColors = [
     'rgba(38, 198, 218, 0.15)',   // cyan
 ];
 
+// Build a map from range index to color (only for ranges with msg_id)
+function buildRangeColorMap(blameRanges) {
+    const colorMap = new Map();
+    let colorIndex = 0;
+    blameRanges.forEach((range, index) => {
+        if (range.msg_id) {
+            colorMap.set(index, rangeColors[colorIndex % rangeColors.length]);
+            colorIndex++;
+        }
+    });
+    return colorMap;
+}
+
 // Language detection based on file extension
 function getLanguageExtension(filePath) {
     const ext = filePath.split('.').pop().toLowerCase();
@@ -115,20 +128,13 @@ function getLanguageExtension(filePath) {
 }
 
 // Create line decorations for blame ranges
-function createRangeDecorations(blameRanges, doc) {
+function createRangeDecorations(blameRanges, doc, colorMap) {
     const decorations = [];
 
-    // Track color index only for ranges that have operations (not pre-existing)
-    let colorIndex = 0;
-
     blameRanges.forEach((range, index) => {
-        // Skip pre-existing content (no msg_id means it predates the session)
-        if (!range.msg_id) {
-            return;
-        }
-
-        const color = rangeColors[colorIndex % rangeColors.length];
-        colorIndex++;
+        // Skip pre-existing content (no color in map means it predates the session)
+        const color = colorMap.get(index);
+        if (!color) return;
 
         for (let line = range.start; line <= range.end; line++) {
             if (line <= doc.lines) {
@@ -183,26 +189,20 @@ const activeRangeField = StateField.define({
 });
 
 // Create the scrollbar minimap showing blame range positions
-function createMinimap(container, blameRanges, totalLines, editor) {
+function createMinimap(container, blameRanges, totalLines, editor, colorMap) {
     // Remove existing minimap if any
     const existing = container.querySelector('.blame-minimap');
     if (existing) existing.remove();
 
-    // Only show minimap if there are ranges with msg_id
-    const hasRanges = blameRanges.some(r => r.msg_id);
-    if (!hasRanges || totalLines === 0) return null;
+    // Only show minimap if there are ranges with colors
+    if (colorMap.size === 0 || totalLines === 0) return null;
 
     const minimap = document.createElement('div');
     minimap.className = 'blame-minimap';
 
-    // Track color index only for ranges with msg_id (same logic as decorations)
-    let colorIndex = 0;
-
     blameRanges.forEach((range, index) => {
-        if (!range.msg_id) return;
-
-        const color = rangeColors[colorIndex % rangeColors.length];
-        colorIndex++;
+        const color = colorMap.get(index);
+        if (!color) return;
 
         const startPercent = ((range.start - 1) / totalLines) * 100;
         const endPercent = (range.end / totalLines) * 100;
@@ -253,7 +253,8 @@ function createEditor(container, content, blameRanges, filePath) {
     wrapper.appendChild(editorContainer);
 
     const doc = EditorState.create({doc: content}).doc;
-    const rangeDecorations = createRangeDecorations(blameRanges, doc);
+    const colorMap = buildRangeColorMap(blameRanges);
+    const rangeDecorations = createRangeDecorations(blameRanges, doc, colorMap);
 
     // Static decorations plugin
     const rangeDecorationsPlugin = ViewPlugin.define(() => ({}), {
@@ -331,8 +332,8 @@ function createEditor(container, content, blameRanges, filePath) {
         parent: editorContainer,
     });
 
-    // Create minimap after editor
-    createMinimap(wrapper, blameRanges, doc.lines, currentEditor);
+    // Create minimap after editor (reuse colorMap from decorations)
+    createMinimap(wrapper, blameRanges, doc.lines, currentEditor, colorMap);
 
     return currentEditor;
 }
