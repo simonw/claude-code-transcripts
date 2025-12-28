@@ -30,6 +30,59 @@ let currentEditor = null;
 let currentFilePath = null;
 let currentBlameRanges = [];
 
+// Tooltip element for blame hover
+let blameTooltip = null;
+
+function createBlameTooltip() {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'blame-tooltip';
+    tooltip.style.display = 'none';
+    document.body.appendChild(tooltip);
+    return tooltip;
+}
+
+function showBlameTooltip(event, text) {
+    if (!blameTooltip) {
+        blameTooltip = createBlameTooltip();
+    }
+    if (!text) return;
+
+    blameTooltip.textContent = text;
+    blameTooltip.style.display = 'block';
+
+    // Position near cursor but within viewport
+    const padding = 10;
+    let x = event.clientX + padding;
+    let y = event.clientY + padding;
+
+    // Measure tooltip size
+    const rect = blameTooltip.getBoundingClientRect();
+    const maxX = window.innerWidth - rect.width - padding;
+    const maxY = window.innerHeight - rect.height - padding;
+
+    // Handle horizontal overflow
+    if (x > maxX) x = event.clientX - rect.width - padding;
+
+    // Handle vertical overflow - prefer below cursor, shift above if needed
+    if (y > maxY) {
+        // Try above the cursor
+        const yAbove = event.clientY - rect.height - padding;
+        // Only use above position if it stays in viewport, otherwise keep below
+        if (yAbove >= 0) {
+            y = yAbove;
+        }
+    }
+
+    blameTooltip.style.left = x + 'px';
+    blameTooltip.style.top = y + 'px';
+}
+
+function hideBlameTooltip() {
+    if (blameTooltip) {
+        blameTooltip.style.display = 'none';
+    }
+}
+
 // Palette of colors for blame ranges
 const rangeColors = [
     'rgba(66, 165, 245, 0.15)',   // blue
@@ -220,6 +273,38 @@ function createEditor(container, content, blameRanges, filePath) {
                     if (msgId) {
                         scrollToMessage(msgId);
                     }
+                }
+            }
+        },
+        mouseover: (event, view) => {
+            const target = event.target;
+            const line = target.closest('.cm-line');
+            if (line) {
+                const rangeIndex = line.getAttribute('data-range-index');
+                if (rangeIndex !== null) {
+                    const range = blameRanges[parseInt(rangeIndex)];
+                    if (range && range.user_text) {
+                        showBlameTooltip(event, range.user_text);
+                    }
+                }
+            }
+        },
+        mouseout: (event, view) => {
+            const target = event.target;
+            const line = target.closest('.cm-line');
+            if (line) {
+                hideBlameTooltip();
+            }
+        },
+        mousemove: (event, view) => {
+            // Update tooltip position when moving within highlighted line
+            const target = event.target;
+            const line = target.closest('.cm-line');
+            if (line && line.getAttribute('data-range-index') !== null) {
+                const rangeIndex = parseInt(line.getAttribute('data-range-index'));
+                const range = blameRanges[rangeIndex];
+                if (range && range.user_text && blameTooltip && blameTooltip.style.display !== 'none') {
+                    showBlameTooltip(event, range.user_text);
                 }
             }
         }

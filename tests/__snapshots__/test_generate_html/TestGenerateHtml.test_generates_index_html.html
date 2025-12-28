@@ -166,6 +166,7 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .blame-minimap { width: 10px; background: rgba(0,0,0,0.05); position: relative; flex-shrink: 0; border-left: 1px solid rgba(0,0,0,0.1); }
 .minimap-marker { position: absolute; left: 0; right: 0; cursor: pointer; transition: opacity 0.15s; }
 .minimap-marker:hover { opacity: 0.8; }
+.blame-tooltip { position: fixed; z-index: 1000; max-width: 400px; padding: 8px 12px; background: rgba(30, 30, 30, 0.95); color: #fff; font-size: 0.85rem; line-height: 1.4; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none; white-space: pre-wrap; word-wrap: break-word; }
 
 /* File Tree */
 .file-tree { list-style: none; padding: 0; margin: 0; }
@@ -204,8 +205,16 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .cm-active-range { background: rgba(25, 118, 210, 0.2) !important; }
 
 /* Transcript Panel */
-.transcript-panel { width: 460px; min-width: 280px; overflow-y: auto; background: var(--card-bg); border-radius: 8px; padding: 16px; flex-shrink: 0; }
-.transcript-panel h3 { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 12px 0; }
+.transcript-panel { width: 460px; min-width: 280px; overflow-y: auto; background: var(--card-bg); border-radius: 8px; padding: 16px; flex-shrink: 0; position: relative; }
+.transcript-panel h3 { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin: 0 0 8px 0; padding: 0 0 8px 0; position: sticky; top: 0; background: var(--card-bg); z-index: 10; }
+.transcript-panel h3::after { content: ''; position: absolute; left: 0; right: 0; bottom: -8px; height: 8px; background: linear-gradient(to bottom, var(--card-bg) 0%, transparent 100%); pointer-events: none; }
+
+/* Pinned User Message */
+.pinned-user-message { position: sticky; top: 28px; z-index: 9; background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%); border-left: 3px solid #1976d2; border-radius: 6px; padding: 10px 14px; margin: 0 0 8px 0; cursor: pointer; box-shadow: 0 4px 12px -2px rgba(25, 118, 210, 0.15), 0 12px 24px -4px rgba(0, 0, 0, 0.08); border-bottom: 1px solid rgba(25, 118, 210, 0.2); transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.pinned-user-message::after { content: ''; position: absolute; left: 0; right: 0; bottom: -16px; height: 16px; background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9) 0%, transparent 100%); pointer-events: none; }
+.pinned-user-message:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -2px rgba(25, 118, 210, 0.2), 0 16px 32px -4px rgba(0, 0, 0, 0.1); }
+.pinned-user-message::before { content: 'Responding to:'; display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: #1565c0; margin-bottom: 6px; opacity: 0.8; }
+.pinned-user-content { font-size: 0.875rem; color: #1a1a1a; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* Resizable panels */
 .resize-handle { width: 8px; cursor: col-resize; background: transparent; flex-shrink: 0; position: relative; }

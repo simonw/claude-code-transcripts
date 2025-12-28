@@ -276,6 +276,40 @@ def find_git_repo_root(start_path: str) -> Optional[Path]:
     return None
 
 
+def find_commit_before_timestamp(file_repo: Repo, timestamp: str) -> Optional[Any]:
+    """Find the most recent commit before the given ISO timestamp.
+
+    Args:
+        file_repo: GitPython Repo object.
+        timestamp: ISO format timestamp (e.g., "2025-12-27T16:12:36.904Z").
+
+    Returns:
+        Git commit object, or None if not found.
+    """
+    from datetime import datetime
+
+    # Parse the ISO timestamp
+    try:
+        # Handle various ISO formats
+        ts = timestamp.replace("Z", "+00:00")
+        target_dt = datetime.fromisoformat(ts)
+    except ValueError:
+        return None
+
+    # Search through commits to find one before the target time
+    try:
+        for commit in file_repo.iter_commits():
+            commit_dt = datetime.fromtimestamp(
+                commit.committed_date, tz=target_dt.tzinfo
+            )
+            if commit_dt < target_dt:
+                return commit
+    except Exception:
+        pass
+
+    return None
+
+
 def build_file_history_repo(
     operations: List[FileOperation],
 ) -> Tuple[Repo, Path, Dict[str, str]]:
@@ -307,6 +341,13 @@ def build_file_history_repo(
     # Sort operations by timestamp
     sorted_ops = sorted(operations, key=lambda o: o.timestamp)
 
+    # Build a map of file path -> earliest operation timestamp
+    # This helps us find the state before the session started
+    earliest_op_by_file: Dict[str, str] = {}
+    for op in sorted_ops:
+        if op.file_path not in earliest_op_by_file:
+            earliest_op_by_file[op.file_path] = op.timestamp
+
     for op in sorted_ops:
         rel_path = path_mapping.get(op.file_path, op.file_path)
         full_path = temp_dir / rel_path
@@ -319,15 +360,35 @@ def build_file_history_repo(
             if not full_path.exists():
                 fetched = False
 
-                # Try to find a git repo for this file and fetch from HEAD
+                # Try to find a git repo for this file
                 file_repo_root = find_git_repo_root(str(Path(op.file_path).parent))
                 if file_repo_root:
                     try:
                         file_repo = Repo(file_repo_root)
                         file_rel_path = os.path.relpath(op.file_path, file_repo_root)
-                        blob = file_repo.head.commit.tree / file_rel_path
-                        full_path.write_bytes(blob.data_stream.read())
-                        fetched = True
+
+                        # Find commit from before the session started for this file
+                        earliest_ts = earliest_op_by_file.get(
+                            op.file_path, op.timestamp
+                        )
+                        pre_session_commit = find_commit_before_timestamp(
+                            file_repo, earliest_ts
+                        )
+
+                        if pre_session_commit:
+                            # Get file content from the pre-session commit
+                            try:
+                                blob = pre_session_commit.tree / file_rel_path
+                                full_path.write_bytes(blob.data_stream.read())
+                                fetched = True
+                            except (KeyError, TypeError):
+                                pass  # File didn't exist in that commit
+
+                        if not fetched:
+                            # Fallback to HEAD (file might be new)
+                            blob = file_repo.head.commit.tree / file_rel_path
+                            full_path.write_bytes(blob.data_stream.read())
+                            fetched = True
                     except (KeyError, TypeError, ValueError, InvalidGitRepositoryError):
                         pass  # File not in git
 
@@ -814,6 +875,7 @@ def generate_code_view_html(
     output_dir: Path,
     operations: List[FileOperation],
     transcript_messages: List[str] = None,
+    msg_to_user_text: Dict[str, str] = None,
 ) -> None:
     """Generate the code.html file with three-pane layout.
 
@@ -821,12 +883,16 @@ def generate_code_view_html(
         output_dir: Output directory.
         operations: List of FileOperation objects.
         transcript_messages: List of individual message HTML strings.
+        msg_to_user_text: Mapping from msg_id to user prompt text for tooltips.
     """
     if not operations:
         return
 
     if transcript_messages is None:
         transcript_messages = []
+
+    if msg_to_user_text is None:
+        msg_to_user_text = {}
 
     # Extract message IDs from HTML for chunked rendering
     # Messages have format: <div class="message ..." id="msg-...">
@@ -886,6 +952,7 @@ def generate_code_view_html(
                         "msg_id": r.msg_id,
                         "operation_type": r.operation_type,
                         "timestamp": r.timestamp,
+                        "user_text": msg_to_user_text.get(r.msg_id, ""),
                     }
                     for r in blame_ranges
                 ],
@@ -937,6 +1004,27 @@ def generate_code_view_html(
     finally:
         # Clean up temp directory
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+def build_msg_to_user_text(conversations: List[Dict]) -> Dict[str, str]:
+    """Build a mapping from msg_id to the user prompt that preceded it.
+
+    For each message in a conversation, the user_text from that conversation
+    is the prompt that the user sent before the assistant's response.
+
+    Args:
+        conversations: List of conversation dicts with user_text and messages.
+
+    Returns:
+        Dict mapping msg_id to user prompt text.
+    """
+    msg_to_user_text = {}
+    for conv in conversations:
+        user_text = conv.get("user_text", "")
+        for log_type, message_json, timestamp in conv.get("messages", []):
+            msg_id = make_msg_id(timestamp)
+            msg_to_user_text[msg_id] = user_text
+    return msg_to_user_text
 
 
 def extract_text_from_content(content):
@@ -1929,6 +2017,7 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .blame-minimap { width: 10px; background: rgba(0,0,0,0.05); position: relative; flex-shrink: 0; border-left: 1px solid rgba(0,0,0,0.1); }
 .minimap-marker { position: absolute; left: 0; right: 0; cursor: pointer; transition: opacity 0.15s; }
 .minimap-marker:hover { opacity: 0.8; }
+.blame-tooltip { position: fixed; z-index: 1000; max-width: 400px; padding: 8px 12px; background: rgba(30, 30, 30, 0.95); color: #fff; font-size: 0.85rem; line-height: 1.4; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); pointer-events: none; white-space: pre-wrap; word-wrap: break-word; }
 
 /* File Tree */
 .file-tree { list-style: none; padding: 0; margin: 0; }
@@ -2347,10 +2436,12 @@ def generate_html(
 
     # Generate code view if requested
     if has_code_view:
+        msg_to_user_text = build_msg_to_user_text(conversations)
         generate_code_view_html(
             output_dir,
             file_operations,
             transcript_messages=all_messages_html,
+            msg_to_user_text=msg_to_user_text,
         )
         num_files = len(set(op.file_path for op in file_operations))
         print(f"Generated code.html ({num_files} files)")
@@ -2851,10 +2942,12 @@ def generate_html_from_session_data(
 
     # Generate code view if requested
     if has_code_view:
+        msg_to_user_text = build_msg_to_user_text(conversations)
         generate_code_view_html(
             output_dir,
             file_operations,
             transcript_messages=all_messages_html,
+            msg_to_user_text=msg_to_user_text,
         )
         num_files = len(set(op.file_path for op in file_operations))
         click.echo(f"Generated code.html ({num_files} files)")
