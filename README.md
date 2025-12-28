@@ -5,7 +5,7 @@
 [![Tests](https://github.com/simonw/claude-code-transcripts/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-transcripts/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-transcripts/blob/main/LICENSE)
 
-Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
+Convert Claude Code and Gemini session files (JSON or JSONL) to clean, mobile-friendly HTML pages.
 
 [Example transcript](https://static.simonwillison.net/static/2025/claude-code-microjs/index.html) produced using this tool.
 
@@ -24,11 +24,11 @@ uvx claude-code-transcripts --help
 
 ## Usage
 
-This tool converts Claude Code session files into browseable multi-page HTML transcripts.
+This tool converts Claude Code and Gemini session files into browseable HTML transcripts.
 
 There are four commands available:
 
-- `local` (default) - select from local Claude Code sessions stored in `~/.claude/projects`
+- `local` (default) - select from local sessions stored in `~/.claude/projects` and `~/.gemini/tmp/*/chats`
 - `web` - select from web sessions via the Claude API
 - `json` - convert a specific JSON or JSONL session file
 - `all` - convert all local sessions to a browsable HTML archive
@@ -58,7 +58,7 @@ The generated output includes:
 
 ### Local sessions
 
-Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:
+Local sessions are stored as JSONL files in `~/.claude/projects` (Claude Code) and JSON files in `~/.gemini/tmp/*/chats` (Gemini). Run with no arguments to select from recent sessions:
 
 ```bash
 claude-code-transcripts
@@ -153,6 +153,8 @@ claude-code-transcripts json session.jsonl --open
 ```
 
 When using [Claude Code for web](https://claude.ai/code) you can export your session as a `session.json` file using the `teleport` command.
+
+Gemini sessions are stored locally under `~/.gemini/tmp/*/chats`. You can convert any of those JSON files using the `json` command.
 
 ### Converting all sessions
 
