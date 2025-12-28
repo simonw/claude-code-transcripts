@@ -1,6 +1,23 @@
 // CodeMirror 6 imports from CDN
-import {EditorView, lineNumbers, gutter, GutterMarker, Decoration, ViewPlugin} from 'https://esm.sh/@codemirror/view@6';
+import {EditorView, lineNumbers, gutter, GutterMarker, Decoration, ViewPlugin, WidgetType} from 'https://esm.sh/@codemirror/view@6';
 import {EditorState, StateField, StateEffect} from 'https://esm.sh/@codemirror/state@6';
+
+// Widget to show user message number at end of line
+class MessageNumberWidget extends WidgetType {
+    constructor(msgNum) {
+        super();
+        this.msgNum = msgNum;
+    }
+    toDOM() {
+        const span = document.createElement('span');
+        span.className = 'blame-msg-num';
+        span.textContent = `#${this.msgNum}`;
+        return span;
+    }
+    eq(other) {
+        return this.msgNum === other.msgNum;
+    }
+}
 import {syntaxHighlighting, defaultHighlightStyle} from 'https://esm.sh/@codemirror/language@6';
 import {javascript} from 'https://esm.sh/@codemirror/lang-javascript@6';
 import {python} from 'https://esm.sh/@codemirror/lang-python@6';
@@ -133,17 +150,41 @@ const rangeColors = [
     'rgba(38, 198, 218, 0.15)',   // cyan
 ];
 
-// Build a map from range index to color (only for ranges with msg_id)
-function buildRangeColorMap(blameRanges) {
-    const colorMap = new Map();
+// Extract prompt number from user_html (e.g., '<span class="index-item-number">#5</span>' -> 5)
+function extractPromptNum(userHtml) {
+    if (!userHtml) return null;
+    const match = userHtml.match(/index-item-number">#(\d+)</);
+    return match ? parseInt(match[1]) : null;
+}
+
+// Build maps for range colors and message numbers
+// Ranges with the same msg_id get the same color and number
+function buildRangeMaps(blameRanges) {
+    const colorMap = new Map();      // range index -> color
+    const msgNumMap = new Map();     // range index -> user message number
+    const msgIdToColor = new Map();  // msg_id -> color
+    const msgIdToNum = new Map();    // msg_id -> user message number
     let colorIndex = 0;
+
     blameRanges.forEach((range, index) => {
         if (range.msg_id) {
-            colorMap.set(index, rangeColors[colorIndex % rangeColors.length]);
-            colorIndex++;
+            // Check if we've already seen this msg_id
+            if (!msgIdToColor.has(range.msg_id)) {
+                msgIdToColor.set(range.msg_id, rangeColors[colorIndex % rangeColors.length]);
+                colorIndex++;
+                // Extract prompt number from user_html
+                const promptNum = extractPromptNum(range.user_html);
+                if (promptNum) {
+                    msgIdToNum.set(range.msg_id, promptNum);
+                }
+            }
+            colorMap.set(index, msgIdToColor.get(range.msg_id));
+            if (msgIdToNum.has(range.msg_id)) {
+                msgNumMap.set(index, msgIdToNum.get(range.msg_id));
+            }
         }
     });
-    return colorMap;
+    return { colorMap, msgNumMap };
 }
 
 // Language detection based on file extension
@@ -168,7 +209,7 @@ function getLanguageExtension(filePath) {
 }
 
 // Create line decorations for blame ranges
-function createRangeDecorations(blameRanges, doc, colorMap) {
+function createRangeDecorations(blameRanges, doc, colorMap, msgNumMap) {
     const decorations = [];
 
     blameRanges.forEach((range, index) => {
@@ -178,7 +219,10 @@ function createRangeDecorations(blameRanges, doc, colorMap) {
 
         for (let line = range.start; line <= range.end; line++) {
             if (line <= doc.lines) {
-                const lineStart = doc.line(line).from;
+                const lineInfo = doc.line(line);
+                const lineStart = lineInfo.from;
+
+                // Add line background decoration
                 decorations.push(
                     Decoration.line({
                         attributes: {
@@ -188,6 +232,19 @@ function createRangeDecorations(blameRanges, doc, colorMap) {
                         }
                     }).range(lineStart)
                 );
+
+                // Add message number widget on first line of range
+                if (line === range.start) {
+                    const msgNum = msgNumMap.get(index);
+                    if (msgNum) {
+                        decorations.push(
+                            Decoration.widget({
+                                widget: new MessageNumberWidget(msgNum),
+                                side: 1,  // After line content
+                            }).range(lineInfo.to)
+                        );
+                    }
+                }
             }
         }
     });
@@ -293,8 +350,8 @@ function createEditor(container, content, blameRanges, filePath) {
     wrapper.appendChild(editorContainer);
 
     const doc = EditorState.create({doc: content}).doc;
-    const colorMap = buildRangeColorMap(blameRanges);
-    const rangeDecorations = createRangeDecorations(blameRanges, doc, colorMap);
+    const { colorMap, msgNumMap } = buildRangeMaps(blameRanges);
+    const rangeDecorations = createRangeDecorations(blameRanges, doc, colorMap, msgNumMap);
 
     // Static decorations plugin
     const rangeDecorationsPlugin = ViewPlugin.define(() => ({}), {
