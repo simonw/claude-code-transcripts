@@ -1085,6 +1085,35 @@ GIST_PREVIEW_JS = r"""
     var match = window.location.search.match(/^\?([^/]+)/);
     if (!match) return;
     var gistId = match[1];
+
+    // Load external CSS from raw gist URL
+    // (gistpreview injects via innerHTML, so <link> tags don't load)
+    document.querySelectorAll('link[rel="stylesheet"]').forEach(function(link) {
+        var href = link.getAttribute('href');
+        if (href && !href.startsWith('http')) {
+            var rawUrl = 'https://gist.githubusercontent.com/raw/' + gistId + '/' + href;
+            fetch(rawUrl).then(function(r) { return r.text(); }).then(function(css) {
+                var style = document.createElement('style');
+                style.textContent = css;
+                document.head.appendChild(style);
+            });
+        }
+    });
+
+    // Load external JS from raw gist URL
+    document.querySelectorAll('script[src]').forEach(function(script) {
+        var src = script.getAttribute('src');
+        if (src && !src.startsWith('http')) {
+            var rawUrl = 'https://gist.githubusercontent.com/raw/' + gistId + '/' + src;
+            fetch(rawUrl).then(function(r) { return r.text(); }).then(function(js) {
+                var newScript = document.createElement('script');
+                newScript.textContent = js;
+                document.body.appendChild(newScript);
+            });
+        }
+    });
+
+    // Fix relative links for navigation
     document.querySelectorAll('a[href]').forEach(function(link) {
         var href = link.getAttribute('href');
         // Skip external links and anchors
@@ -1179,10 +1208,11 @@ def create_gist(output_dir, public=False):
     cmd = ["gh", "gist", "create"]
     cmd.extend(str(f) for f in sorted(html_files))
 
-    # Include code-data.json if it exists (for code view lazy loading)
-    code_data_file = output_dir / "code-data.json"
-    if code_data_file.exists():
-        cmd.append(str(code_data_file))
+    # Include supporting files for gist
+    for extra_file in ["code-data.json", "styles.css", "main.js"]:
+        extra_path = output_dir / extra_file
+        if extra_path.exists():
+            cmd.append(str(extra_path))
     if public:
         cmd.append("--public")
 
@@ -1420,6 +1450,10 @@ def generate_html(json_path, output_dir, github_repo=None, code_view=False):
     print(
         f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
     )
+
+    # Write external CSS and JS files (reduces HTML size for gist compatibility)
+    (output_dir / "styles.css").write_text(CSS, encoding="utf-8")
+    (output_dir / "main.js").write_text(JS, encoding="utf-8")
 
     # Generate code view if requested
     if has_code_view:
@@ -1931,6 +1965,10 @@ def generate_html_from_session_data(
         f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
     )
 
+    # Write external CSS and JS files (reduces HTML size for gist compatibility)
+    (output_dir / "styles.css").write_text(CSS, encoding="utf-8")
+    (output_dir / "main.js").write_text(JS, encoding="utf-8")
+
     # Generate code view if requested
     if has_code_view:
         msg_to_user_html, msg_to_context_id = build_msg_to_user_html(conversations)
@@ -1940,6 +1978,7 @@ def generate_html_from_session_data(
             transcript_messages=all_messages_html,
             msg_to_user_html=msg_to_user_html,
             msg_to_context_id=msg_to_context_id,
+            total_pages=total_pages,
         )
         num_files = len(set(op.file_path for op in file_operations))
         click.echo(f"Generated code.html ({num_files} files)")

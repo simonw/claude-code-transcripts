@@ -4,12 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Claude Code transcript{% endblock %}</title>
-    <style>{{ css|safe }}</style>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
 {%- block content %}{% endblock %}
     </div>
-    <script>{{ js|safe }}</script>
+    <script src="main.js"></script>
 </body>
 </html>
