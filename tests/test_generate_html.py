@@ -1798,3 +1798,159 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestPageDataJson:
+    """Tests for page-data.json generation for gist two-gist strategy."""
+
+    def test_generates_page_data_files_for_large_sessions(self, tmp_path):
+        """Test that page-data-NNN.json files are generated for large sessions."""
+        from claude_code_transcripts import PAGE_DATA_SIZE_THRESHOLD
+
+        # Create a session with enough content to exceed threshold
+        # Generate many conversations to make pages large
+        loglines = []
+        for i in range(50):  # Many conversations
+            loglines.append(
+                {
+                    "type": "user",
+                    "timestamp": f"2025-01-01T{i:02d}:00:00.000Z",
+                    "message": {"role": "user", "content": f"Task {i}: " + "x" * 5000},
+                }
+            )
+            loglines.append(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2025-01-01T{i:02d}:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Response " + "y" * 5000}],
+                    },
+                }
+            )
+
+        session_file = tmp_path / "large_session.json"
+        session_file.write_text(json.dumps({"loglines": loglines}), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        # Should generate individual page-data-NNN.json files for large sessions
+        page_data_files = list(output_dir.glob("page-data-*.json"))
+        assert len(page_data_files) > 0, "page-data-NNN.json files should be generated"
+
+        # Verify first page data file
+        page_data_001 = output_dir / "page-data-001.json"
+        assert page_data_001.exists(), "page-data-001.json should exist"
+
+        # The file contains the HTML string directly (not a dict)
+        page_data = json.loads(page_data_001.read_text(encoding="utf-8"))
+        assert "<div" in page_data, "Page 1 should contain HTML"
+
+    def test_no_page_data_files_for_small_sessions(self, output_dir):
+        """Test that page-data-NNN.json files are NOT generated for small sessions."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir)
+
+        # Small sessions should not have any page-data files
+        page_data_files = list(output_dir.glob("page-data-*.json"))
+        assert (
+            len(page_data_files) == 0
+        ), "page-data files should not be generated for small sessions"
+
+    def test_page_data_files_collected_for_gist(self, tmp_path, monkeypatch):
+        """Test that page-data-*.json files are collected for gist upload."""
+        import subprocess
+
+        # Create a large session to generate page-data files
+        loglines = []
+        for i in range(50):
+            loglines.append(
+                {
+                    "type": "user",
+                    "timestamp": f"2025-01-01T{i:02d}:00:00.000Z",
+                    "message": {"role": "user", "content": f"Task {i}: " + "x" * 5000},
+                }
+            )
+            loglines.append(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2025-01-01T{i:02d}:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Response " + "y" * 5000}],
+                    },
+                }
+            )
+
+        session_file = tmp_path / "large_session.json"
+        session_file.write_text(json.dumps({"loglines": loglines}), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        # Make page-data files large enough to trigger two-gist
+        for f in output_dir.glob("page-data-*.json"):
+            f.write_text(json.dumps("x" * (200 * 1024)), encoding="utf-8")
+
+        subprocess_calls = []
+        gist_counter = [0]
+
+        def mock_run(cmd, *args, **kwargs):
+            subprocess_calls.append(cmd)
+            gist_counter[0] += 1
+            gist_id = f"gist{gist_counter[0]:03d}"
+            return subprocess.CompletedProcess(
+                args=cmd,
+                returncode=0,
+                stdout=f"https://gist.github.com/testuser/{gist_id}\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        create_gist(output_dir)
+
+        # First call should include page-data files in the data gist
+        first_cmd = " ".join(str(x) for x in subprocess_calls[0])
+        assert "page-data-" in first_cmd, "page-data files should be in data gist"
+
+    def test_page_html_has_page_num_for_large_sessions(self, tmp_path):
+        """Test that page HTML has page number when page-data.json is generated."""
+        # Create a large session
+        loglines = []
+        for i in range(50):
+            loglines.append(
+                {
+                    "type": "user",
+                    "timestamp": f"2025-01-01T{i:02d}:00:00.000Z",
+                    "message": {"role": "user", "content": f"Task {i}: " + "x" * 5000},
+                }
+            )
+            loglines.append(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2025-01-01T{i:02d}:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Response " + "y" * 5000}],
+                    },
+                }
+            )
+
+        session_file = tmp_path / "large_session.json"
+        session_file.write_text(json.dumps({"loglines": loglines}), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+
+        # Should have page number embedded for fetching
+        assert "window.PAGE_NUM" in page_html

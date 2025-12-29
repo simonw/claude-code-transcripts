@@ -7,7 +7,83 @@
 {% block content %}
         <div class="transcript-wrapper">
             {{ pagination_html|safe }}
-            {{ messages_html|safe }}
+            <div id="page-messages">
+                {{ messages_html|safe }}
+            </div>
             {{ pagination_html|safe }}
         </div>
+{%- if use_page_data_json %}
+        <script>window.PAGE_NUM = {{ page_num }};</script>
+        <script>
+        // Load page content from page-data-NNN.json on gistpreview
+        (function() {
+            function getGistDataUrls(pageNum) {
+                // Check if we're on gistpreview.github.io
+                if (window.location.hostname !== 'gistpreview.github.io') return [];
+
+                // Get gist ID from URL query string
+                var query = window.location.search.substring(1);
+                var parts = query.split('/');
+                var mainGistId = parts[0];
+
+                // Format page number with leading zeros (e.g., 001, 012, 123)
+                var paddedNum = String(pageNum).padStart(3, '0');
+                var filename = '/page-data-' + paddedNum + '.json';
+
+                // Build list of gist IDs to try
+                var gistIds = [];
+                if (window.DATA_GIST_IDS && window.DATA_GIST_IDS.length > 0) {
+                    // Multiple data gists - try each one
+                    gistIds = window.DATA_GIST_IDS;
+                } else if (window.DATA_GIST_ID) {
+                    // Single data gist
+                    gistIds = [window.DATA_GIST_ID];
+                } else {
+                    // No separate data gist, use main gist
+                    gistIds = [mainGistId];
+                }
+
+                return gistIds.map(function(gistId) {
+                    return 'https://gist.githubusercontent.com/raw/' + gistId + filename;
+                });
+            }
+
+            async function tryFetchFromUrls(urls) {
+                for (var i = 0; i < urls.length; i++) {
+                    try {
+                        var response = await fetch(urls[i]);
+                        if (response.ok) {
+                            return await response.json();
+                        }
+                    } catch (e) {
+                        // Try next URL
+                    }
+                }
+                throw new Error('Failed to load from any gist');
+            }
+
+            var pageNum = window.PAGE_NUM;
+            var dataUrls = getGistDataUrls(pageNum);
+            if (dataUrls.length > 0) {
+                // We're on gistpreview - fetch page data
+                var container = document.getElementById('page-messages');
+
+                tryFetchFromUrls(dataUrls)
+                    .then(function(html) {
+                        // The JSON file contains the HTML string directly
+                        container.innerHTML = html;
+                        // Handle fragment navigation after content loads
+                        if (window.location.hash) {
+                            var el = document.querySelector(window.location.hash);
+                            if (el) el.scrollIntoView();
+                        }
+                    })
+                    .catch(function(err) {
+                        console.error('Failed to load page data:', err);
+                        // Content is already in HTML as fallback
+                    });
+            }
+        })();
+        </script>
+{%- endif %}
 {%- endblock %}

@@ -1135,7 +1135,7 @@ GIST_PREVIEW_JS = r"""
 """
 
 
-def inject_gist_preview_js(output_dir, data_gist_id=None):
+def inject_gist_preview_js(output_dir, data_gist_id=None, data_gist_ids=None):
     """Inject gist preview JavaScript into all HTML files in the output directory.
 
     Also removes inline CODE_DATA from code.html since gist version fetches it separately.
@@ -1144,6 +1144,8 @@ def inject_gist_preview_js(output_dir, data_gist_id=None):
         output_dir: Path to the output directory containing HTML files.
         data_gist_id: Optional gist ID for a separate data gist. If provided,
             code.html will fetch data from this gist instead of the main gist.
+        data_gist_ids: Optional list of all data gist IDs (for batched uploads).
+            If provided, pages can try multiple gists to find their data file.
     """
     output_dir = Path(output_dir)
     for html_file in output_dir.glob("*.html"):
@@ -1168,6 +1170,52 @@ def inject_gist_preview_js(output_dir, data_gist_id=None):
                 )
                 content = content.replace("<head>", f"<head>\n{data_gist_script}")
 
+        # For index.html, inject data gist IDs for search to use
+        if html_file.name == "index.html":
+            if data_gist_ids and len(data_gist_ids) > 1:
+                gist_ids_json = json.dumps(data_gist_ids)
+                data_gists_script = (
+                    f"<script>window.DATA_GIST_IDS = {gist_ids_json};</script>\n"
+                )
+                content = content.replace("<head>", f"<head>\n{data_gists_script}")
+            elif data_gist_id:
+                data_gist_script = (
+                    f'<script>window.DATA_GIST_ID = "{data_gist_id}";</script>\n'
+                )
+                content = content.replace("<head>", f"<head>\n{data_gist_script}")
+
+        # For page-*.html, strip inline content if corresponding JSON exists
+        if html_file.name.startswith("page-") and html_file.name.endswith(".html"):
+            import re
+
+            # Check if page-data-XXX.json exists for this page
+            page_num = html_file.name.replace("page-", "").replace(".html", "")
+            page_data_file = output_dir / f"page-data-{page_num}.json"
+
+            if page_data_file.exists():
+                # Remove inline page messages content (gist version fetches from JSON)
+                # Keep the container div but empty it
+                content = re.sub(
+                    r'(<div id="page-messages">).*?(</div>\s*<nav class="pagination">)',
+                    r"\1\2",
+                    content,
+                    flags=re.DOTALL,
+                )
+
+                if data_gist_ids and len(data_gist_ids) > 1:
+                    # Inject list of data gist IDs for multi-gist fetching
+                    gist_ids_json = json.dumps(data_gist_ids)
+                    data_gists_script = (
+                        f"<script>window.DATA_GIST_IDS = {gist_ids_json};</script>\n"
+                    )
+                    content = content.replace("<head>", f"<head>\n{data_gists_script}")
+                elif data_gist_id:
+                    # Single data gist
+                    data_gist_script = (
+                        f'<script>window.DATA_GIST_ID = "{data_gist_id}";</script>\n'
+                    )
+                    content = content.replace("<head>", f"<head>\n{data_gist_script}")
+
         # Insert the gist preview JS before the closing </body> tag
         if "</body>" in content:
             content = content.replace(
@@ -1180,8 +1228,56 @@ def inject_gist_preview_js(output_dir, data_gist_id=None):
 # GitHub API truncates gist content at ~1MB total response size
 GIST_SIZE_THRESHOLD = 1024 * 1024
 
+# Size threshold for generating page-data.json (500KB total HTML)
+# Only generate page-data.json for sessions with large page content
+PAGE_DATA_SIZE_THRESHOLD = 500 * 1024
+
 # Data files that can be split into a separate gist
+# Note: page-data-*.json files are added dynamically based on what exists
 DATA_FILES = ["code-data.json"]
+
+# Maximum size per gist batch (900KB to be safe under GitHub's ~1MB limit)
+GIST_BATCH_SIZE = 900 * 1024
+
+# Maximum files per gist batch (GitHub can struggle with too many files)
+GIST_BATCH_MAX_FILES = 50
+
+
+def _batch_files_for_gist(files):
+    """Split files into batches suitable for gist upload.
+
+    Each batch respects both size and file count limits to avoid
+    GitHub API errors like 'contents are too large'.
+
+    Args:
+        files: List of file paths to batch.
+
+    Returns:
+        List of batches, where each batch is a list of file paths.
+    """
+    batches = []
+    current_batch = []
+    current_size = 0
+
+    for file_path in files:
+        file_size = file_path.stat().st_size
+
+        # Start a new batch if adding this file would exceed limits
+        if current_batch and (
+            current_size + file_size > GIST_BATCH_SIZE
+            or len(current_batch) >= GIST_BATCH_MAX_FILES
+        ):
+            batches.append(current_batch)
+            current_batch = []
+            current_size = 0
+
+        current_batch.append(file_path)
+        current_size += file_size
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
 
 
 def _create_single_gist(files, public=False):
@@ -1257,24 +1353,88 @@ def create_gist(output_dir, public=False):
         if data_path.exists():
             data_files.append(data_path)
             data_total_size += data_path.stat().st_size
+    # Also collect page-data-*.json files (generated for large sessions)
+    for page_data_file in sorted(output_dir.glob("page-data-*.json")):
+        data_files.append(page_data_file)
+        data_total_size += page_data_file.stat().st_size
 
     # Decide whether to use two-gist strategy
     if data_total_size > GIST_SIZE_THRESHOLD and data_files:
-        # Two-gist strategy: create data gist first
-        data_gist_id, _ = _create_single_gist(data_files, public=public)
+        # Two-gist strategy: create data gist(s) first
+        # Batch data files to avoid GitHub API limits
+        data_batches = _batch_files_for_gist(data_files)
 
-        # Inject data gist ID and gist preview JS into HTML files
-        inject_gist_preview_js(output_dir, data_gist_id=data_gist_id)
+        if len(data_batches) == 1:
+            # Single data gist
+            data_gist_id, _ = _create_single_gist(data_batches[0], public=public)
+            data_gist_ids = [data_gist_id]
+        else:
+            # Multiple data gists needed - upload each batch
+            click.echo(
+                f"Data files too large for single gist, creating {len(data_batches)} data gists..."
+            )
+            data_gist_ids = []
+            for i, batch in enumerate(data_batches):
+                batch_id, _ = _create_single_gist(batch, public=public)
+                data_gist_ids.append(batch_id)
+                click.echo(
+                    f"  Created data gist {i + 1}/{len(data_batches)}: {batch_id}"
+                )
 
-        # Create main gist (excluding data files)
-        return _create_single_gist(main_files, public=public)
+        # Inject data gist ID(s) and gist preview JS into HTML files
+        # For multiple gists, JS will try each one until it finds the file
+        inject_gist_preview_js(
+            output_dir, data_gist_id=data_gist_ids[0], data_gist_ids=data_gist_ids
+        )
+
+        # Create main gist (excluding data files) - also may need batching
+        main_batches = _batch_files_for_gist(main_files)
+        if len(main_batches) == 1:
+            return _create_single_gist(main_batches[0], public=public)
+        else:
+            # Multiple main gists needed - upload first batch as main, others as additional
+            click.echo(
+                f"HTML files too large for single gist, creating {len(main_batches)} gists..."
+            )
+            main_gist_id, main_gist_url = _create_single_gist(
+                main_batches[0], public=public
+            )
+            for i, batch in enumerate(main_batches[1:], 2):
+                batch_id, _ = _create_single_gist(batch, public=public)
+                click.echo(
+                    f"  Created additional gist {i}/{len(main_batches)}: {batch_id}"
+                )
+            return main_gist_id, main_gist_url
     else:
         # Single gist strategy: inject gist preview JS first
         inject_gist_preview_js(output_dir)
 
         # Create gist with all files
+        # Only use batching if total size exceeds threshold (to avoid API errors)
         all_files = main_files + data_files
-        return _create_single_gist(all_files, public=public)
+        total_size = sum(f.stat().st_size for f in all_files)
+
+        if total_size <= GIST_SIZE_THRESHOLD:
+            # Small enough for single gist without batching
+            return _create_single_gist(all_files, public=public)
+
+        # Need batching for large total size
+        all_batches = _batch_files_for_gist(all_files)
+        if len(all_batches) == 1:
+            return _create_single_gist(all_batches[0], public=public)
+        else:
+            click.echo(
+                f"Files too large for single gist, creating {len(all_batches)} gists..."
+            )
+            main_gist_id, main_gist_url = _create_single_gist(
+                all_batches[0], public=public
+            )
+            for i, batch in enumerate(all_batches[1:], 2):
+                batch_id, _ = _create_single_gist(batch, public=public)
+                click.echo(
+                    f"  Created additional gist {i}/{len(all_batches)}: {batch_id}"
+                )
+            return main_gist_id, main_gist_url
 
 
 def generate_pagination_html(current_page, total_pages):
@@ -1365,6 +1525,8 @@ def generate_html(
 
     # Collect all messages HTML for the code view transcript pane
     all_messages_html = []
+    # Collect messages per page for potential page-data.json
+    page_messages_dict = {}
 
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
@@ -1393,23 +1555,41 @@ def generate_html(
                 is_first = False
         if total_page_messages > 50:
             print("\r" + " " * 60 + "\r", end="")  # Clear the progress line
+
+        # Store messages for this page
+        page_messages_dict[str(page_num)] = "".join(messages_html)
+
+        # Collect all messages for code view transcript pane
+        all_messages_html.extend(messages_html)
+
+    # Calculate total size of all page messages to decide if page-data files are needed
+    total_page_messages_size = sum(len(html) for html in page_messages_dict.values())
+    use_page_data_json = total_page_messages_size > PAGE_DATA_SIZE_THRESHOLD
+
+    if use_page_data_json:
+        # Write individual page-data-NNN.json files for gist lazy loading
+        # This allows batched uploads and avoids GitHub's gist size limits
+        for page_num_str, messages_html in page_messages_dict.items():
+            page_data_file = output_dir / f"page-data-{int(page_num_str):03d}.json"
+            page_data_file.write_text(json.dumps(messages_html), encoding="utf-8")
+
+    # Generate page HTML files
+    for page_num in range(1, total_pages + 1):
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
             page_num=page_num,
             total_pages=total_pages,
             pagination_html=pagination_html,
-            messages_html="".join(messages_html),
+            messages_html=page_messages_dict[str(page_num)],
             has_code_view=has_code_view,
             active_tab="transcript",
+            use_page_data_json=use_page_data_json,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
         )
         print(f"Generated page-{page_num:03d}.html")
-
-        # Collect all messages for code view transcript pane
-        all_messages_html.extend(messages_html)
 
     # Calculate overall stats and collect all commits for timeline
     total_tool_counts = {}
@@ -1905,6 +2085,8 @@ def generate_html_from_session_data(
 
     # Collect all messages HTML for the code view transcript pane
     all_messages_html = []
+    # Collect messages per page for potential page-data.json
+    page_messages_dict = {}
 
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
@@ -1932,23 +2114,41 @@ def generate_html_from_session_data(
                 is_first = False
         if total_page_messages > 50:
             click.echo("\r" + " " * 60 + "\r", nl=False)  # Clear the progress line
+
+        # Store messages for this page
+        page_messages_dict[str(page_num)] = "".join(messages_html)
+
+        # Collect all messages for code view transcript pane
+        all_messages_html.extend(messages_html)
+
+    # Calculate total size of all page messages to decide if page-data files are needed
+    total_page_messages_size = sum(len(html) for html in page_messages_dict.values())
+    use_page_data_json = total_page_messages_size > PAGE_DATA_SIZE_THRESHOLD
+
+    if use_page_data_json:
+        # Write individual page-data-NNN.json files for gist lazy loading
+        # This allows batched uploads and avoids GitHub's gist size limits
+        for page_num_str, messages_html in page_messages_dict.items():
+            page_data_file = output_dir / f"page-data-{int(page_num_str):03d}.json"
+            page_data_file.write_text(json.dumps(messages_html), encoding="utf-8")
+
+    # Generate page HTML files
+    for page_num in range(1, total_pages + 1):
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
             page_num=page_num,
             total_pages=total_pages,
             pagination_html=pagination_html,
-            messages_html="".join(messages_html),
+            messages_html=page_messages_dict[str(page_num)],
             has_code_view=has_code_view,
             active_tab="transcript",
+            use_page_data_json=use_page_data_json,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
         )
         click.echo(f"Generated page-{page_num:03d}.html")
-
-        # Collect all messages for code view transcript pane
-        all_messages_html.extend(messages_html)
 
     # Calculate overall stats and collect all commits for timeline
     total_tool_counts = {}
