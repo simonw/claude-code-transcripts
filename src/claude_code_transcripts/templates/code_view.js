@@ -369,6 +369,14 @@ async function init() {
 
         if (colorMap.size === 0 || totalLines === 0) return null;
 
+        // Check if scrolling is needed - if not, don't show minimap
+        const editorContainer = container.querySelector('.editor-container');
+        const scrollElement = editorContainer?.querySelector('.cm-scroller');
+        if (scrollElement) {
+            const needsScroll = scrollElement.scrollHeight > scrollElement.clientHeight;
+            if (!needsScroll) return null;
+        }
+
         const minimap = document.createElement('div');
         minimap.className = 'blame-minimap';
 
