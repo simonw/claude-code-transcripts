@@ -1,4 +1,4 @@
-"""Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
+"""Convert Claude Code and Gemini session JSON to a clean mobile-friendly HTML page."""
 
 import json
 import html
@@ -112,6 +112,46 @@ def get_session_summary(filepath, max_length=200):
         return "(no summary)"
 
 
+def _truncate_summary(text, max_length):
+    if len(text) > max_length:
+        return text[: max_length - 3] + "..."
+    return text
+
+
+def _extract_first_gemini_user_content(head_text):
+    type_match = re.search(r'"type"\s*:\s*"user"', head_text)
+    if not type_match:
+        return None
+    content_match = re.search(r'"content"\s*:\s*', head_text[type_match.end() :])
+    if not content_match:
+        return None
+    pos = type_match.end() + content_match.end()
+    while pos < len(head_text) and head_text[pos].isspace():
+        pos += 1
+    if pos >= len(head_text) or head_text[pos] != '"':
+        return None
+    try:
+        value, _ = json.JSONDecoder().raw_decode(head_text[pos:])
+    except json.JSONDecodeError:
+        return None
+    return value
+
+
+def get_gemini_summary(filepath, max_length=200, max_bytes=262144):
+    """Extract a summary from a Gemini session file without reading the full file."""
+    filepath = Path(filepath)
+    try:
+        with open(filepath, "rb") as f:
+            head = f.read(max_bytes)
+        head_text = head.decode("utf-8", errors="ignore")
+        text = _extract_first_gemini_user_content(head_text)
+        if text:
+            return _truncate_summary(text, max_length)
+    except Exception:
+        return "(no summary)"
+    return "(no summary)"
+
+
 def _get_jsonl_summary(filepath, max_length=200):
     """Extract summary from JSONL file."""
     try:
@@ -180,6 +220,30 @@ def find_local_sessions(folder, limit=10):
 
     # Sort by modification time, most recent first
     results.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)
+    if limit is None:
+        return results
+    return results[:limit]
+
+
+def find_gemini_sessions(folder, limit=10):
+    """Find recent Gemini session JSON files in the given folder."""
+    folder = Path(folder)
+    if not folder.exists():
+        return []
+
+    results = []
+    for chats_dir in folder.glob("*/chats"):
+        if not chats_dir.is_dir():
+            continue
+        for session_file in chats_dir.glob("*.json"):
+            summary = get_gemini_summary(session_file)
+            if summary == "(no summary)":
+                continue
+            results.append((session_file, summary))
+
+    results.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)
+    if limit is None:
+        return results
     return results[:limit]
 
 
@@ -403,6 +467,7 @@ def _generate_project_index(project, output_dir):
         session_count=len(sessions_data),
         css=CSS,
         js=JS,
+        transcript_title="Claude Code Archive",
     )
 
     output_path = output_dir / "index.html"
@@ -442,6 +507,7 @@ def _generate_master_index(projects, output_dir):
         total_sessions=total_sessions,
         css=CSS,
         js=JS,
+        transcript_title="Claude Code Archive",
     )
 
     output_path = output_dir / "index.html"
@@ -461,7 +527,119 @@ def parse_session_file(filepath):
     else:
         # Standard JSON format
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if _is_gemini_session(data):
+            return _parse_gemini_session(data)
+        data.setdefault("source", "claude")
+        return data
+
+
+def _is_gemini_session(data):
+    if not isinstance(data, dict):
+        return False
+    messages = data.get("messages")
+    if not isinstance(messages, list):
+        return False
+    return any(
+        isinstance(m, dict) and m.get("type") in ("user", "gemini", "error")
+        for m in messages
+    )
+
+
+def _format_gemini_thought(thought):
+    subject = thought.get("subject")
+    description = thought.get("description")
+    if subject and description:
+        return f"{subject}\n\n{description}"
+    return subject or description
+
+
+def _extract_gemini_tool_results(tool_call):
+    outputs = []
+    for result in tool_call.get("result", []):
+        if not isinstance(result, dict):
+            continue
+        response = result.get("functionResponse", {}).get("response", {})
+        if isinstance(response, dict) and "output" in response:
+            outputs.append(response["output"])
+            continue
+        if "output" in result:
+            outputs.append(result["output"])
+    return outputs
+
+
+def _parse_gemini_session(data):
+    loglines = []
+    for entry in data.get("messages", []):
+        if not isinstance(entry, dict):
+            continue
+        msg_type = entry.get("type")
+        timestamp = entry.get("timestamp", "")
+
+        if msg_type == "user":
+            message = {"role": "user", "content": entry.get("content", "")}
+            loglines.append(
+                {"type": "user", "timestamp": timestamp, "message": message}
+            )
+            continue
+
+        if msg_type == "gemini":
+            content_blocks = []
+            text = entry.get("content")
+            if text:
+                content_blocks.append({"type": "text", "text": text})
+
+            for thought in entry.get("thoughts", []):
+                if not isinstance(thought, dict):
+                    continue
+                thought_text = _format_gemini_thought(thought)
+                if thought_text:
+                    content_blocks.append(
+                        {"type": "thinking", "thinking": thought_text}
+                    )
+
+            for tool_call in entry.get("toolCalls", []):
+                if not isinstance(tool_call, dict):
+                    continue
+                tool_name = tool_call.get("name", "Unknown tool")
+                tool_input = tool_call.get("args", {})
+                tool_id = tool_call.get("id", "")
+                content_blocks.append(
+                    {
+                        "type": "tool_use",
+                        "name": tool_name,
+                        "input": tool_input,
+                        "id": tool_id,
+                    }
+                )
+                for output in _extract_gemini_tool_results(tool_call):
+                    content_blocks.append({"type": "tool_result", "content": output})
+
+            message = {
+                "role": "assistant",
+                "content": content_blocks or entry.get("content", ""),
+            }
+            loglines.append(
+                {"type": "assistant", "timestamp": timestamp, "message": message}
+            )
+            continue
+
+        if msg_type == "error":
+            error_text = entry.get("content")
+            if error_text:
+                message = {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": f"Error: {error_text}"}],
+                }
+                loglines.append(
+                    {
+                        "type": "assistant",
+                        "timestamp": timestamp,
+                        "message": message,
+                    }
+                )
+
+    return {"loglines": loglines, "source": "gemini"}
 
 
 def _parse_jsonl_file(filepath):
@@ -496,7 +674,7 @@ def _parse_jsonl_file(filepath):
             except json.JSONDecodeError:
                 continue
 
-    return {"loglines": loglines}
+    return {"loglines": loglines, "source": "claude"}
 
 
 class CredentialsError(Exception):
@@ -617,6 +795,12 @@ def detect_github_repo(loglines):
                     if match:
                         return match.group(1)
     return None
+
+
+def get_transcript_title(source):
+    if source == "gemini":
+        return "Gemini transcript"
+    return "Claude Code transcript"
 
 
 def format_json(obj):
@@ -1159,6 +1343,8 @@ def generate_html(json_path, output_dir, github_repo=None):
 
     # Load session file (supports both JSON and JSONL)
     data = parse_session_file(json_path)
+    source = data.get("source", "claude")
+    transcript_title = get_transcript_title(source)
 
     loglines = data.get("loglines", [])
 
@@ -1211,7 +1397,6 @@ def generate_html(json_path, output_dir, github_repo=None):
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
-
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -1236,6 +1421,7 @@ def generate_html(json_path, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            transcript_title=transcript_title,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1320,6 +1506,7 @@ def generate_html(json_path, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        transcript_title=transcript_title,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
@@ -1331,7 +1518,7 @@ def generate_html(json_path, output_dir, github_repo=None):
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
 def cli():
-    """Convert Claude Code session JSON to mobile-friendly HTML pages."""
+    """Convert Claude Code and Gemini session JSON to mobile-friendly HTML pages."""
     pass
 
 
@@ -1375,24 +1562,37 @@ def cli():
     help="Maximum number of sessions to show (default: 10)",
 )
 def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
-    """Select and convert a local Claude Code session to HTML."""
+    """Select and convert a local session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
-
-    if not projects_folder.exists():
-        click.echo(f"Projects folder not found: {projects_folder}")
-        click.echo("No local Claude Code sessions available.")
-        return
+    gemini_folder = Path.home() / ".gemini" / "tmp"
 
     click.echo("Loading local sessions...")
-    results = find_local_sessions(projects_folder, limit=limit)
+    claude_results = []
+    gemini_results = []
+    if projects_folder.exists():
+        claude_results = find_local_sessions(projects_folder, limit=None)
+    if gemini_folder.exists():
+        gemini_results = find_gemini_sessions(gemini_folder, limit=None)
 
-    if not results:
+    combined = []
+    for filepath, summary in claude_results:
+        combined.append({"path": filepath, "summary": summary, "source": "cld"})
+    for filepath, summary in gemini_results:
+        combined.append({"path": filepath, "summary": summary, "source": "gem"})
+
+    combined.sort(key=lambda x: x["path"].stat().st_mtime, reverse=True)
+    combined = combined[:limit]
+
+    if not combined:
         click.echo("No local sessions found.")
         return
 
     # Build choices for questionary
     choices = []
-    for filepath, summary in results:
+    for item in combined:
+        filepath = item["path"]
+        summary = item["summary"]
+        source = item["source"]
         stat = filepath.stat()
         mod_time = datetime.fromtimestamp(stat.st_mtime)
         size_kb = stat.st_size / 1024
@@ -1400,7 +1600,7 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         # Truncate summary if too long
         if len(summary) > 50:
             summary = summary[:47] + "..."
-        display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
+        display = f"[{source}] {date_str}  {size_kb:5.0f} KB  {summary}"
         choices.append(questionary.Choice(title=display, value=filepath))
 
     selected = questionary.select(
@@ -1488,7 +1688,7 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
 def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
-    """Convert a Claude Code session JSON/JSONL file to HTML."""
+    """Convert a session JSON/JSONL file to HTML."""
     # Determine output directory and whether to open browser
     # If no -o specified, use temp dir and open browser by default
     auto_open = output is None and not gist and not output_auto
@@ -1580,6 +1780,8 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     output_dir.mkdir(exist_ok=True, parents=True)
 
     loglines = session_data.get("loglines", [])
+    source = session_data.get("source", "claude")
+    transcript_title = get_transcript_title(source)
 
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
@@ -1626,7 +1828,6 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
-
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -1651,6 +1852,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            transcript_title=transcript_title,
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1735,6 +1937,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        transcript_title=transcript_title,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")

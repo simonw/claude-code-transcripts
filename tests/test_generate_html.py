@@ -27,6 +27,8 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    find_gemini_sessions,
+    get_gemini_summary,
 )
 
 
@@ -60,7 +62,6 @@ def output_dir():
 
 class TestGenerateHtml:
     """Tests for the main generate_html function."""
-
     def test_generates_index_html(self, output_dir, snapshot_html):
         """Test index.html generation."""
         fixture_path = Path(__file__).parent / "sample_session.json"
@@ -719,7 +720,7 @@ class TestContinuationLongTexts:
         session_file.write_text(json.dumps(session_data), encoding="utf-8")
 
         # Generate HTML
-        generate_html(session_file, output_dir)
+        generate_html(session_file, output_dir, paginate=True)
 
         # Read the index.html
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
@@ -1041,6 +1042,59 @@ class TestParseSessionFile:
         assert "hello world" in index_html.lower()
         assert index_html == snapshot_html
 
+    def test_parses_gemini_format(self, tmp_path):
+        """Test that Gemini session JSON is normalized to loglines."""
+        session_data = {
+            "sessionId": "gemini-session",
+            "messages": [
+                {
+                    "id": "msg-1",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "type": "user",
+                    "content": "Hello Gemini",
+                },
+                {
+                    "id": "msg-2",
+                    "timestamp": "2025-01-01T00:00:05Z",
+                    "type": "gemini",
+                    "content": "Hi there",
+                    "thoughts": [
+                        {
+                            "subject": "Planning",
+                            "description": "Review files first.",
+                        }
+                    ],
+                    "toolCalls": [
+                        {
+                            "id": "read-1",
+                            "name": "read_file",
+                            "args": {"file_path": "README.md"},
+                            "result": [
+                                {
+                                    "functionResponse": {
+                                        "response": {"output": "Content"}
+                                    }
+                                }
+                            ],
+                        }
+                    ],
+                },
+            ],
+        }
+        session_path = tmp_path / "session.json"
+        session_path.write_text(json.dumps(session_data), encoding="utf-8")
+
+        result = parse_session_file(session_path)
+
+        assert "loglines" in result
+        assert len(result["loglines"]) == 2
+        assert result["loglines"][0]["type"] == "user"
+        assert result["loglines"][1]["type"] == "assistant"
+        assistant_content = result["loglines"][1]["message"]["content"]
+        assert any(block.get("type") == "thinking" for block in assistant_content)
+        assert any(block.get("type") == "tool_use" for block in assistant_content)
+        assert any(block.get("type") == "tool_result" for block in assistant_content)
+
 
 class TestGetSessionSummary:
     """Tests for get_session_summary which extracts summary from session files."""
@@ -1075,6 +1129,63 @@ class TestGetSessionSummary:
         summary = get_session_summary(jsonl_file, max_length=100)
         assert len(summary) <= 100
         assert summary.endswith("...")
+
+    def test_gets_gemini_summary_from_first_user_message(self, tmp_path):
+        """Test extracting Gemini summary from first user message."""
+        session_data = {
+            "sessionId": "gemini-session",
+            "messages": [
+                {
+                    "id": "msg-1",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "type": "user",
+                    "content": "Gemini summary prompt",
+                },
+                {
+                    "id": "msg-2",
+                    "timestamp": "2025-01-01T00:00:05Z",
+                    "type": "gemini",
+                    "content": "Response",
+                },
+            ],
+        }
+        session_path = tmp_path / "session.json"
+        session_path.write_text(json.dumps(session_data), encoding="utf-8")
+
+        summary = get_gemini_summary(session_path)
+        assert summary == "Gemini summary prompt"
+
+
+class TestFindGeminiSessions:
+    """Tests for find_gemini_sessions which discovers Gemini session JSON files."""
+
+    def test_finds_gemini_sessions(self, tmp_path):
+        """Test finding Gemini session files in chats directory."""
+        chats_dir = tmp_path / "tmp" / "proj" / "chats"
+        chats_dir.mkdir(parents=True)
+
+        session_file = chats_dir / "session-1.json"
+        session_file.write_text(
+            json.dumps(
+                {
+                    "sessionId": "gem-1",
+                    "messages": [
+                        {
+                            "id": "msg-1",
+                            "timestamp": "2025-01-01T00:00:00Z",
+                            "type": "user",
+                            "content": "Hello Gemini",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        results = find_gemini_sessions(tmp_path / "tmp", limit=10)
+        assert len(results) == 1
+        assert results[0][0] == session_file
+        assert results[0][1] == "Hello Gemini"
 
 
 class TestFindLocalSessions:
