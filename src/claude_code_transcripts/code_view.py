@@ -1099,25 +1099,23 @@ def generate_code_view_html(
 
 
 def build_msg_to_user_html(conversations: List[Dict]) -> Dict[str, str]:
-    """Build a mapping from msg_id to index-item style HTML for tooltips.
+    """Build a mapping from msg_id to tooltip HTML.
 
-    For each message in a conversation, render the user prompt with stats
-    in the same style as the index page items.
+    For each tool call message, render the user prompt followed by the
+    assistant text that immediately preceded the tool call.
 
     Args:
         conversations: List of conversation dicts with user_text, timestamp, and messages.
 
     Returns:
-        Dict mapping msg_id to rendered index-item style HTML.
+        Dict mapping msg_id to rendered tooltip HTML.
     """
     # Import here to avoid circular imports
     from claude_code_transcripts import (
         make_msg_id,
         render_markdown_text,
-        analyze_conversation,
-        format_tool_stats,
-        _macros,
     )
+    import json
 
     msg_to_user_html = {}
     prompt_num = 0
@@ -1141,27 +1139,53 @@ def build_msg_to_user_html(conversations: List[Dict]) -> Dict[str, str]:
                 break
             all_messages.extend(conversations[j].get("messages", []))
 
-        # Analyze conversation for stats
-        stats = analyze_conversation(all_messages)
-        tool_stats_str = format_tool_stats(stats["tool_counts"])
-
-        # Build long texts HTML
-        long_texts_html = ""
-        for lt in stats["long_texts"]:
-            rendered_lt = render_markdown_text(lt)
-            long_texts_html += _macros.index_long_text(rendered_lt)
-
-        stats_html = _macros.index_stats(tool_stats_str, long_texts_html)
-
         # Render the user message content
-        rendered_content = render_markdown_text(user_text)
+        rendered_user = render_markdown_text(user_text)
 
-        # Build index-item style HTML (without the <a> wrapper for tooltip use)
-        item_html = f"""<div class="index-item tooltip-item"><div class="index-item-header"><span class="index-item-number">#{prompt_num}</span><time datetime="{conv_timestamp}" data-timestamp="{conv_timestamp}">{conv_timestamp}</time></div><div class="index-item-content">{rendered_content}</div>{stats_html}</div>"""
+        # Build base HTML with user prompt
+        user_html = f"""<div class="index-item tooltip-item"><div class="index-item-header"><span class="index-item-number">#{prompt_num}</span><time datetime="{conv_timestamp}" data-timestamp="{conv_timestamp}">{conv_timestamp}</time></div><div class="index-item-content">{rendered_user}</div></div>"""
 
-        # Map all messages in this conversation (and continuations) to this HTML
+        # Track the most recent assistant text for context
+        last_assistant_text = ""
+
         for log_type, message_json, timestamp in all_messages:
             msg_id = make_msg_id(timestamp)
-            msg_to_user_html[msg_id] = item_html
+
+            try:
+                message_data = json.loads(message_json)
+            except (json.JSONDecodeError, TypeError):
+                msg_to_user_html[msg_id] = user_html
+                continue
+
+            content = message_data.get("content", [])
+
+            if log_type == "assistant" and isinstance(content, list):
+                # Extract text blocks from assistant message
+                text_parts = []
+                has_tool_use = False
+                for block in content:
+                    if isinstance(block, dict):
+                        if block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif block.get("type") == "tool_use":
+                            has_tool_use = True
+
+                if text_parts:
+                    last_assistant_text = "\n".join(text_parts)
+
+                # For messages with tool_use, build tooltip with assistant context
+                if has_tool_use and last_assistant_text:
+                    rendered_assistant = render_markdown_text(last_assistant_text)
+                    # Truncate long assistant text
+                    if len(last_assistant_text) > 500:
+                        truncated = last_assistant_text[:500] + "..."
+                        rendered_assistant = render_markdown_text(truncated)
+
+                    item_html = f"""<div class="index-item tooltip-item"><div class="index-item-header"><span class="index-item-number">#{prompt_num}</span><time datetime="{conv_timestamp}" data-timestamp="{conv_timestamp}">{conv_timestamp}</time></div><div class="index-item-content">{rendered_user}</div><div class="tooltip-assistant"><div class="tooltip-assistant-label">Assistant context:</div>{rendered_assistant}</div></div>"""
+                    msg_to_user_html[msg_id] = item_html
+                else:
+                    msg_to_user_html[msg_id] = user_html
+            else:
+                msg_to_user_html[msg_id] = user_html
 
     return msg_to_user_html
