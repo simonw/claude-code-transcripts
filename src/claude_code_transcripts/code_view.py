@@ -1190,8 +1190,9 @@ def generate_code_view_html(
         # Also embed data inline for local file:// use
         # (fetch() doesn't work with file:// URLs due to CORS)
         code_data_json = json.dumps(code_data)
-        # Escape </script> in case it appears in content
-        code_data_json = code_data_json.replace("</script>", "<\\/script>")
+        # Escape </ sequences to prevent HTML parser from seeing closing tags
+        # inside the script element (e.g., </div> in user_html would break parsing)
+        code_data_json = code_data_json.replace("</", "<\\/")
         inline_data_script = f"<script>window.CODE_DATA = {code_data_json};</script>"
 
         # Get templates

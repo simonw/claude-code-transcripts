@@ -878,6 +878,52 @@ class TestGenerateCodeViewHtml:
         # The content should be preserved correctly in JSON
         assert data["fileData"]["/test/path.js"]["content"] == content
 
+    def test_escapes_html_closing_tags_in_embedded_json(self, tmp_path):
+        """Test that </div> and other HTML closing tags are escaped in embedded JSON.
+
+        When JSON is embedded in a <script> tag, the browser's HTML parser can
+        mistake </div> or </p> in the JSON string as actual HTML closing tags,
+        breaking script parsing with "Unexpected token '<'" errors.
+        """
+        import json
+
+        # This content won't break, but user_html in blame_ranges will
+        content = "test content"
+
+        operations = [
+            FileOperation(
+                file_path="/test/path.js",
+                operation_type="write",
+                tool_id="t1",
+                timestamp="2024-01-01T10:00:00Z",
+                page_num=1,
+                msg_id="msg-001",
+                content=content,
+            )
+        ]
+
+        generate_code_view_html(
+            tmp_path,
+            operations,
+            # This user_html contains </div> which would break script parsing
+            msg_to_user_html={"msg-001": '<div class="test">Hello</div>'},
+        )
+
+        html = (tmp_path / "code.html").read_text()
+
+        # The </div> should be escaped as <\/div> in the embedded script
+        assert (
+            r"<\/div>" in html
+        ), "HTML closing tags should be escaped in embedded JSON"
+        # The unescaped version should NOT appear inside the script
+        # (it can appear elsewhere in the HTML, just not in the JSON)
+        script_start = html.find("window.CODE_DATA")
+        script_end = html.find("</script>", script_start)
+        embedded_json = html[script_start:script_end]
+        assert (
+            "</div>" not in embedded_json
+        ), "Unescaped </div> should not be in embedded JSON"
+
 
 class TestBuildMsgToUserHtml:
     """Tests for build_msg_to_user_html function."""
