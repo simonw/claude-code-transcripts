@@ -138,8 +138,13 @@ const activeRangeField = StateField.define({
 async function init() {
     let data;
 
+    // Always show loading on init - parsing large embedded JSON takes time
+    showLoading();
+
     // Check for embedded data first (works with local file:// access)
     if (window.CODE_DATA) {
+        // Use setTimeout to allow the loading message to render before heavy processing
+        await new Promise(resolve => setTimeout(resolve, 0));
         data = window.CODE_DATA;
     } else {
         // No embedded data - must be gist version, fetch from raw URL
@@ -638,14 +643,24 @@ async function init() {
             return;
         }
 
-        currentBlameRanges = fileInfo.blame_ranges || [];
-        createEditor(codeContent, fileInfo.content || '', currentBlameRanges, path);
-
-        const firstOpRange = currentBlameRanges.find(r => r.msg_id);
-        if (firstOpRange) {
-            scrollToMessage(firstOpRange.msg_id);
-            scrollEditorToLine(firstOpRange.start);
+        // Show loading indicator for large files
+        const content = fileInfo.content || '';
+        const isLarge = content.length > 50000 || (fileInfo.blame_ranges || []).length > 50;
+        if (isLarge) {
+            codeContent.innerHTML = '<p style="padding: 16px; color: #888;">Loading file...</p>';
         }
+
+        // Use requestAnimationFrame to let the loading message render
+        requestAnimationFrame(() => {
+            currentBlameRanges = fileInfo.blame_ranges || [];
+            createEditor(codeContent, content, currentBlameRanges, path);
+
+            const firstOpRange = currentBlameRanges.find(r => r.msg_id);
+            if (firstOpRange) {
+                scrollToMessage(firstOpRange.msg_id);
+                scrollEditorToLine(firstOpRange.start);
+            }
+        });
     }
 
     // Scroll editor to a line

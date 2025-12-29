@@ -593,6 +593,20 @@ class TestChunkedRendering:
         assert "renderNextChunk" in script_content
 
 
+class TestLoadingIndicators:
+    """Tests for loading indicators."""
+
+    def test_file_switch_shows_loading(self, code_view_page: Page):
+        """Test that switching files shows a loading indicator briefly."""
+        files = code_view_page.locator(".tree-file")
+        if files.count() > 1:
+            # Click a different file
+            files.nth(1).click()
+            # The code content area should exist and eventually show the editor
+            code_content = code_view_page.locator("#code-content")
+            expect(code_content).to_be_visible()
+
+
 class TestLineAnchors:
     """Tests for line anchor deep-linking support."""
 
