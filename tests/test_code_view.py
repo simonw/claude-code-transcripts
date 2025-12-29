@@ -986,6 +986,191 @@ class TestBuildMsgToUserHtml:
         # Should also have assistant context
         assert "create that file" in html
 
+    def test_preserves_block_order_thinking_first(self):
+        """Test that blocks are rendered in original order (thinking before text)."""
+        from claude_code_transcripts import build_msg_to_user_html
+
+        conversations = [
+            {
+                "user_text": "Create a file",
+                "timestamp": "2025-01-01T10:00:00Z",
+                "messages": [
+                    (
+                        "user",
+                        '{"content": "Create a file", "role": "user"}',
+                        "2025-01-01T10:00:00Z",
+                    ),
+                    (
+                        "assistant",
+                        json.dumps(
+                            {
+                                "content": [
+                                    # Thinking comes FIRST
+                                    {
+                                        "type": "thinking",
+                                        "thinking": "THINKING_MARKER_FIRST",
+                                    },
+                                    # Then text
+                                    {"type": "text", "text": "TEXT_MARKER_SECOND"},
+                                    {
+                                        "type": "tool_use",
+                                        "id": "toolu_001",
+                                        "name": "Write",
+                                        "input": {
+                                            "file_path": "/test.py",
+                                            "content": "# test",
+                                        },
+                                    },
+                                ],
+                                "role": "assistant",
+                            }
+                        ),
+                        "2025-01-01T10:00:05Z",
+                    ),
+                ],
+            }
+        ]
+
+        result = build_msg_to_user_html(conversations)
+        html = result["msg-2025-01-01T10-00-05Z"]
+
+        # Thinking should appear before text in the HTML
+        thinking_pos = html.find("THINKING_MARKER_FIRST")
+        text_pos = html.find("TEXT_MARKER_SECOND")
+
+        assert thinking_pos != -1, "Thinking marker not found"
+        assert text_pos != -1, "Text marker not found"
+        assert thinking_pos < text_pos, "Thinking should come before text"
+
+    def test_preserves_block_order_text_first(self):
+        """Test that blocks are rendered in original order (text before thinking)."""
+        from claude_code_transcripts import build_msg_to_user_html
+
+        conversations = [
+            {
+                "user_text": "Create a file",
+                "timestamp": "2025-01-01T10:00:00Z",
+                "messages": [
+                    (
+                        "user",
+                        '{"content": "Create a file", "role": "user"}',
+                        "2025-01-01T10:00:00Z",
+                    ),
+                    (
+                        "assistant",
+                        json.dumps(
+                            {
+                                "content": [
+                                    # Text comes FIRST
+                                    {"type": "text", "text": "TEXT_MARKER_FIRST"},
+                                    # Then thinking
+                                    {
+                                        "type": "thinking",
+                                        "thinking": "THINKING_MARKER_SECOND",
+                                    },
+                                    {
+                                        "type": "tool_use",
+                                        "id": "toolu_001",
+                                        "name": "Write",
+                                        "input": {
+                                            "file_path": "/test.py",
+                                            "content": "# test",
+                                        },
+                                    },
+                                ],
+                                "role": "assistant",
+                            }
+                        ),
+                        "2025-01-01T10:00:05Z",
+                    ),
+                ],
+            }
+        ]
+
+        result = build_msg_to_user_html(conversations)
+        html = result["msg-2025-01-01T10-00-05Z"]
+
+        # Text should appear before thinking in the HTML
+        text_pos = html.find("TEXT_MARKER_FIRST")
+        thinking_pos = html.find("THINKING_MARKER_SECOND")
+
+        assert text_pos != -1, "Text marker not found"
+        assert thinking_pos != -1, "Thinking marker not found"
+        assert text_pos < thinking_pos, "Text should come before thinking"
+
+    def test_accumulates_blocks_across_messages(self):
+        """Test that thinking and text from separate messages are both included."""
+        from claude_code_transcripts import build_msg_to_user_html
+
+        conversations = [
+            {
+                "user_text": "Create a file",
+                "timestamp": "2025-01-01T10:00:00Z",
+                "messages": [
+                    (
+                        "user",
+                        '{"content": "Create a file", "role": "user"}',
+                        "2025-01-01T10:00:00Z",
+                    ),
+                    # First message has only thinking (extended thinking scenario)
+                    (
+                        "assistant",
+                        json.dumps(
+                            {
+                                "content": [
+                                    {
+                                        "type": "thinking",
+                                        "thinking": "THINKING_FROM_FIRST_MESSAGE",
+                                    },
+                                ],
+                                "role": "assistant",
+                            }
+                        ),
+                        "2025-01-01T10:00:02Z",
+                    ),
+                    # Second message has text + tool_use
+                    (
+                        "assistant",
+                        json.dumps(
+                            {
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "TEXT_FROM_SECOND_MESSAGE",
+                                    },
+                                    {
+                                        "type": "tool_use",
+                                        "id": "toolu_001",
+                                        "name": "Write",
+                                        "input": {
+                                            "file_path": "/test.py",
+                                            "content": "# test",
+                                        },
+                                    },
+                                ],
+                                "role": "assistant",
+                            }
+                        ),
+                        "2025-01-01T10:00:05Z",
+                    ),
+                ],
+            }
+        ]
+
+        result = build_msg_to_user_html(conversations)
+        html = result["msg-2025-01-01T10-00-05Z"]
+
+        # Both thinking and text should be present
+        assert (
+            "THINKING_FROM_FIRST_MESSAGE" in html
+        ), "Thinking from first message not found"
+        assert "TEXT_FROM_SECOND_MESSAGE" in html, "Text from second message not found"
+
+        # And thinking should come before text (since it was in the earlier message)
+        thinking_pos = html.find("THINKING_FROM_FIRST_MESSAGE")
+        text_pos = html.find("TEXT_FROM_SECOND_MESSAGE")
+        assert thinking_pos < text_pos, "Thinking should come before text"
+
     def test_truncates_long_text(self):
         """Test that long assistant text is truncated."""
         from claude_code_transcripts import build_msg_to_user_html
