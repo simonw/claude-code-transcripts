@@ -452,6 +452,11 @@ async function init() {
                         if (msgId) {
                             scrollToMessage(msgId);
                         }
+                        // Update URL hash for deep-linking
+                        const range = blameRanges[parseInt(rangeIndex)];
+                        if (range) {
+                            updateLineHash(range.start);
+                        }
                     }
                 }
             },
@@ -655,6 +660,67 @@ async function init() {
         });
     }
 
+    // Update URL hash for deep-linking to a line
+    function updateLineHash(lineNumber) {
+        if (!currentFilePath) return;
+        // Use format: #path/to/file:L{number}
+        const hash = `${encodeURIComponent(currentFilePath)}:L${lineNumber}`;
+        history.replaceState(null, '', `#${hash}`);
+    }
+
+    // Parse URL hash and navigate to file/line
+    // Supports formats: #L5, #path/to/file:L5, #path%2Fto%2Ffile:L5
+    function navigateFromHash() {
+        const hash = window.location.hash.slice(1); // Remove leading #
+        if (!hash) return false;
+
+        let filePath = null;
+        let lineNumber = null;
+
+        // Check for file:L{number} format
+        const fileLineMatch = hash.match(/^(.+):L(\d+)$/);
+        if (fileLineMatch) {
+            filePath = decodeURIComponent(fileLineMatch[1]);
+            lineNumber = parseInt(fileLineMatch[2]);
+        } else {
+            // Check for just L{number} format (uses current file)
+            const lineMatch = hash.match(/^L(\d+)$/);
+            if (lineMatch) {
+                lineNumber = parseInt(lineMatch[1]);
+                filePath = currentFilePath; // Use current file
+            }
+        }
+
+        if (lineNumber) {
+            // If we have a file path and it's different from current, load it
+            if (filePath && filePath !== currentFilePath) {
+                // Find and click the file in the tree
+                const fileEl = document.querySelector(`.tree-file[data-path="${CSS.escape(filePath)}"]`);
+                if (fileEl) {
+                    document.querySelectorAll('.tree-file.selected').forEach(el => el.classList.remove('selected'));
+                    fileEl.classList.add('selected');
+                    loadFile(filePath);
+                }
+            }
+
+            // Wait for editor to be ready, then scroll to line
+            requestAnimationFrame(() => {
+                scrollEditorToLine(lineNumber);
+                // Find and highlight the range at this line
+                if (currentBlameRanges.length > 0 && currentEditor) {
+                    const rangeIndex = currentBlameRanges.findIndex(r =>
+                        lineNumber >= r.start && lineNumber <= r.end
+                    );
+                    if (rangeIndex >= 0) {
+                        highlightRange(rangeIndex, currentBlameRanges, currentEditor);
+                    }
+                }
+            });
+            return true;
+        }
+        return false;
+    }
+
     // Navigate from message to code
     function navigateToBlame(msgId) {
         const blameInfo = msgIdToBlame.get(msgId);
@@ -712,11 +778,21 @@ async function init() {
         }
     });
 
-    // Auto-select first file
+    // Auto-select first file, or navigate from hash if present
     const firstFile = document.querySelector('.tree-file');
     if (firstFile) {
         firstFile.click();
     }
+
+    // Check URL hash for deep-linking (after first file loads)
+    requestAnimationFrame(() => {
+        navigateFromHash();
+    });
+
+    // Handle hash changes (browser back/forward)
+    window.addEventListener('hashchange', () => {
+        navigateFromHash();
+    });
 
     // Resizable panels
     function initResize() {

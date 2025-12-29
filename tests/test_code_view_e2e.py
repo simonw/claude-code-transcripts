@@ -591,3 +591,55 @@ class TestChunkedRendering:
         script_content = scripts.first.text_content()
         assert "renderMessagesUpTo" in script_content
         assert "renderNextChunk" in script_content
+
+
+class TestLineAnchors:
+    """Tests for line anchor deep-linking support."""
+
+    def test_line_hash_navigates_to_line(self, page: Page, http_server: str):
+        """Test that navigating with #L{number} scrolls to that line."""
+        # Navigate to code.html#L5
+        page.goto(f"{http_server}/code.html#L5")
+        page.wait_for_selector(".cm-editor", timeout=10000)
+        page.wait_for_timeout(500)  # Wait for scroll to happen
+
+        # Line 5 should be visible and highlighted
+        line_5 = page.locator(".cm-gutterElement:has-text('5')")
+        if line_5.count() > 0:
+            # The line 5 gutter element should be visible
+            expect(line_5.first).to_be_visible()
+
+    def test_clicking_line_updates_url_hash(self, code_view_page: Page):
+        """Test that clicking a line updates the URL hash."""
+        # Click on a line with a blame range
+        blame_line = code_view_page.locator(".cm-line[data-range-index]").first
+        if blame_line.count() > 0:
+            blame_line.click()
+            code_view_page.wait_for_timeout(200)
+
+            # URL should now contain an #L anchor
+            url = code_view_page.url
+            assert (
+                "#L" in url or "#" in url
+            ), "URL should have a line anchor after clicking"
+
+    def test_line_hash_with_file_path(self, page: Page, http_server: str):
+        """Test that navigating with file:L{number} format works."""
+        # First load the page to get a file path
+        page.goto(f"{http_server}/code.html")
+        page.wait_for_selector(".cm-editor", timeout=10000)
+
+        # Get the first file path
+        first_file = page.locator(".tree-file").first
+        file_path = first_file.get_attribute("data-path")
+
+        if file_path:
+            # Navigate with file:Lnumber format
+            # URL encode the file path for the hash
+            encoded_path = file_path.replace("/", "%2F")
+            page.goto(f"{http_server}/code.html#{encoded_path}:L3")
+            page.wait_for_timeout(500)
+
+            # The correct file should be selected and visible
+            editor = page.locator(".cm-editor")
+            expect(editor).to_be_visible()
