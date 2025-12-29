@@ -2002,11 +2002,12 @@ class TestPageDataJson:
         index_data = json.loads(index_data_file.read_text(encoding="utf-8"))
         assert "<div" in index_data, "index-data.json should contain HTML"
 
-        # index.html should have the loader script
+        # index.html should still include content for local viewing
+        # (loader JS is only injected during gist upload by inject_gist_preview_js)
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert (
-            "index-data.json" in index_html
-        ), "index.html should reference index-data.json"
+            'id="index-items"' in index_html
+        ), "index.html should have index-items container"
 
     def test_no_index_data_json_for_small_sessions(self, output_dir):
         """Test that index-data.json is NOT generated for small sessions."""
@@ -2018,3 +2019,59 @@ class TestPageDataJson:
         assert (
             not index_data_file.exists()
         ), "index-data.json should not exist for small sessions"
+
+    def test_large_session_html_includes_content_for_local_viewing(self, tmp_path):
+        """Test that large session HTML includes content when not uploading to gist.
+
+        Even when page-data-XXX.json files are generated, the HTML pages should
+        contain the actual content for local viewing (file:// or local http server).
+        The JSON files are only needed when uploading to gist where file size matters.
+        """
+        # Create a large session that triggers page-data JSON generation
+        loglines = []
+        for i in range(50):
+            loglines.append(
+                {
+                    "type": "user",
+                    "timestamp": f"2025-01-01T{i:02d}:00:00.000Z",
+                    "message": {"role": "user", "content": f"Task {i}: " + "x" * 5000},
+                }
+            )
+            loglines.append(
+                {
+                    "type": "assistant",
+                    "timestamp": f"2025-01-01T{i:02d}:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Response " + "y" * 5000}],
+                    },
+                }
+            )
+
+        session_file = tmp_path / "large_session.json"
+        session_file.write_text(json.dumps({"loglines": loglines}), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        # Verify page-data JSON files were generated (confirms session is "large")
+        page_data_files = list(output_dir.glob("page-data-*.json"))
+        assert (
+            len(page_data_files) > 0
+        ), "page-data files should be generated for large sessions"
+
+        # But the HTML pages should STILL include content for local viewing
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        # The page should have actual message content, not just empty containers
+        assert (
+            "Task 0:" in page_html or "xxxxx" in page_html
+        ), "page-001.html should include message content for local viewing"
+
+        # Index should also include content
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        # The index should have items, not just empty #index-items div
+        assert (
+            'class="index-item"' in index_html or "Task " in index_html
+        ), "index.html should include index items for local viewing"

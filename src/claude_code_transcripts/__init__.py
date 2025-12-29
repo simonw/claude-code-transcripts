@@ -1134,6 +1134,117 @@ GIST_PREVIEW_JS = r"""
 })();
 """
 
+# JavaScript to load page content from page-data-NNN.json on gistpreview
+PAGE_DATA_LOADER_JS = r"""
+(function() {
+    function getGistDataUrl(pageNum) {
+        if (window.location.hostname !== 'gistpreview.github.io') return null;
+        var query = window.location.search.substring(1);
+        var parts = query.split('/');
+        var mainGistId = parts[0];
+        var paddedNum = String(pageNum).padStart(3, '0');
+        var filename = '/page-data-' + paddedNum + '.json';
+        var dataGistId = window.DATA_GIST_ID || mainGistId;
+        return 'https://gist.githubusercontent.com/raw/' + dataGistId + filename;
+    }
+    var pageNum = window.PAGE_NUM;
+    var dataUrl = getGistDataUrl(pageNum);
+    if (dataUrl) {
+        var container = document.getElementById('page-messages');
+        fetch(dataUrl)
+            .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+            .then(function(html) {
+                container.innerHTML = html;
+                if (window.location.hash) {
+                    var el = document.querySelector(window.location.hash);
+                    if (el) el.scrollIntoView();
+                }
+            })
+            .catch(function(e) { console.error('Failed to load page data:', e); });
+    }
+})();
+"""
+
+# JavaScript to load index content from index-data.json on gistpreview
+INDEX_DATA_LOADER_JS = r"""
+(function() {
+    function getGistDataUrl() {
+        if (window.location.hostname !== 'gistpreview.github.io') return null;
+        var query = window.location.search.substring(1);
+        var parts = query.split('/');
+        var mainGistId = parts[0];
+        var dataGistId = window.DATA_GIST_ID || mainGistId;
+        return 'https://gist.githubusercontent.com/raw/' + dataGistId + '/index-data.json';
+    }
+    var dataUrl = getGistDataUrl();
+    if (dataUrl) {
+        var container = document.getElementById('index-items');
+        fetch(dataUrl)
+            .then(function(r) { if (!r.ok) throw new Error('Failed'); return r.json(); })
+            .then(function(html) {
+                container.innerHTML = html;
+                if (window.location.hash) {
+                    var el = document.querySelector(window.location.hash);
+                    if (el) el.scrollIntoView();
+                }
+            })
+            .catch(function(e) { console.error('Failed to load index data:', e); });
+    }
+})();
+"""
+
+
+def _strip_container_content(html: str, container_id: str) -> str:
+    """Strip content from a container div while preserving the rest of the HTML.
+
+    This uses a simple string-based approach to find the container and empty it.
+    The container is expected to be a direct child of a wrapper div.
+
+    Args:
+        html: The HTML content
+        container_id: The id of the container div to strip content from
+
+    Returns:
+        The HTML with the container's content removed
+    """
+    # Find the opening tag
+    open_tag = f'<div id="{container_id}">'
+    start_idx = html.find(open_tag)
+    if start_idx == -1:
+        return html
+
+    # Find the content start (after the opening tag)
+    content_start = start_idx + len(open_tag)
+
+    # Find the matching closing tag by counting nested divs
+    depth = 1
+    pos = content_start
+    while depth > 0 and pos < len(html):
+        next_open = html.find("<div", pos)
+        next_close = html.find("</div>", pos)
+
+        if next_close == -1:
+            # No closing tag found, return original
+            return html
+
+        if next_open != -1 and next_open < next_close:
+            # Found nested opening div
+            depth += 1
+            pos = next_open + 4
+        else:
+            # Found closing div
+            depth -= 1
+            if depth == 0:
+                # This is the matching close tag
+                content_end = next_close
+                break
+            pos = next_close + 6
+    else:
+        return html
+
+    # Replace content with empty string (preserve whitespace for formatting)
+    return html[:content_start] + "\n            " + html[content_end:]
+
 
 def inject_gist_preview_js(output_dir, data_gist_id=None):
     """Inject gist preview JavaScript into all HTML files in the output directory.
@@ -1168,8 +1279,8 @@ def inject_gist_preview_js(output_dir, data_gist_id=None):
                 )
                 content = content.replace("<head>", f"<head>\n{data_gist_script}")
 
-        # For index.html and page-*.html, inject data gist ID if needed
-        # (Content is already excluded in templates when use_*_data_json is true)
+        # For index.html and page-*.html, strip content and inject data gist ID
+        # when using separate data gist (content will be loaded from JSON files)
         if html_file.name == "index.html" or (
             html_file.name.startswith("page-") and html_file.name.endswith(".html")
         ):
@@ -1178,6 +1289,23 @@ def inject_gist_preview_js(output_dir, data_gist_id=None):
                     f'<script>window.DATA_GIST_ID = "{data_gist_id}";</script>\n'
                 )
                 content = content.replace("<head>", f"<head>\n{data_gist_script}")
+
+                # Strip content from HTML - gist version loads from JSON files
+                # This reduces HTML file size for gist upload
+                if html_file.name == "index.html":
+                    content = _strip_container_content(content, "index-items")
+                    # Inject the index data loader JS
+                    content = content.replace(
+                        "</body>",
+                        f"<script>{INDEX_DATA_LOADER_JS}</script>\n</body>",
+                    )
+                elif html_file.name.startswith("page-"):
+                    content = _strip_container_content(content, "page-messages")
+                    # Inject the page data loader JS
+                    content = content.replace(
+                        "</body>",
+                        f"<script>{PAGE_DATA_LOADER_JS}</script>\n</body>",
+                    )
 
         # Insert the gist preview JS before the closing </body> tag
         if "</body>" in content:
@@ -1562,6 +1690,8 @@ def generate_html(
             page_data_file.write_text(json.dumps(messages_html), encoding="utf-8")
 
     # Generate page HTML files
+    # Always include content in HTML for local viewing (use_page_data_json=False)
+    # JSON files are generated above for gist preview loading
     for page_num in range(1, total_pages + 1):
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
@@ -1572,7 +1702,7 @@ def generate_html(
             messages_html=page_messages_dict[str(page_num)],
             has_code_view=has_code_view,
             active_tab="transcript",
-            use_page_data_json=use_page_data_json,
+            use_page_data_json=False,  # Always include content for local viewing
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -1653,6 +1783,8 @@ def generate_html(
 
     index_pagination = generate_index_pagination_html(total_pages)
     index_template = get_template("index.html")
+    # Always include content in HTML for local viewing (use_index_data_json=False)
+    # JSON file is generated above for gist preview loading
     index_content = index_template.render(
         pagination_html=index_pagination,
         prompt_num=prompt_num,
@@ -1663,7 +1795,7 @@ def generate_html(
         index_items_html=index_items_html,
         has_code_view=has_code_view,
         active_tab="transcript",
-        use_index_data_json=use_page_data_json,
+        use_index_data_json=False,  # Always include content for local viewing
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
@@ -2135,6 +2267,8 @@ def generate_html_from_session_data(
             page_data_file.write_text(json.dumps(messages_html), encoding="utf-8")
 
     # Generate page HTML files
+    # Always include content in HTML for local viewing (use_page_data_json=False)
+    # JSON files are generated above for gist preview loading
     for page_num in range(1, total_pages + 1):
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
@@ -2145,7 +2279,7 @@ def generate_html_from_session_data(
             messages_html=page_messages_dict[str(page_num)],
             has_code_view=has_code_view,
             active_tab="transcript",
-            use_page_data_json=use_page_data_json,
+            use_page_data_json=False,  # Always include content for local viewing
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -2226,6 +2360,8 @@ def generate_html_from_session_data(
 
     index_pagination = generate_index_pagination_html(total_pages)
     index_template = get_template("index.html")
+    # Always include content in HTML for local viewing (use_index_data_json=False)
+    # JSON file is generated above for gist preview loading
     index_content = index_template.render(
         pagination_html=index_pagination,
         prompt_num=prompt_num,
@@ -2236,7 +2372,7 @@ def generate_html_from_session_data(
         index_items_html=index_items_html,
         has_code_view=has_code_view,
         active_tab="transcript",
-        use_index_data_json=use_page_data_json,
+        use_index_data_json=False,  # Always include content for local viewing
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")

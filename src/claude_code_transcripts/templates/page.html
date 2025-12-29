@@ -14,55 +14,5 @@
             </div>
             {{ pagination_html|safe }}
         </div>
-{%- if use_page_data_json %}
         <script>window.PAGE_NUM = {{ page_num }};</script>
-        <script>
-        // Load page content from page-data-NNN.json on gistpreview
-        (function() {
-            function getGistDataUrl(pageNum) {
-                // Check if we're on gistpreview.github.io
-                if (window.location.hostname !== 'gistpreview.github.io') return null;
-
-                // Get gist ID from URL query string
-                var query = window.location.search.substring(1);
-                var parts = query.split('/');
-                var mainGistId = parts[0];
-
-                // Format page number with leading zeros (e.g., 001, 012, 123)
-                var paddedNum = String(pageNum).padStart(3, '0');
-                var filename = '/page-data-' + paddedNum + '.json';
-
-                // Use DATA_GIST_ID if available, otherwise use main gist
-                var dataGistId = window.DATA_GIST_ID || mainGistId;
-                return 'https://gist.githubusercontent.com/raw/' + dataGistId + filename;
-            }
-
-            var pageNum = window.PAGE_NUM;
-            var dataUrl = getGistDataUrl(pageNum);
-            if (dataUrl) {
-                // We're on gistpreview - fetch page data
-                var container = document.getElementById('page-messages');
-
-                fetch(dataUrl)
-                    .then(function(response) {
-                        if (!response.ok) throw new Error('Failed to fetch');
-                        return response.json();
-                    })
-                    .then(function(html) {
-                        // The JSON file contains the HTML string directly
-                        container.innerHTML = html;
-                        // Handle fragment navigation after content loads
-                        if (window.location.hash) {
-                            var el = document.querySelector(window.location.hash);
-                            if (el) el.scrollIntoView();
-                        }
-                    })
-                    .catch(function(err) {
-                        console.error('Failed to load page data:', err);
-                        // Content is already in HTML as fallback
-                    });
-            }
-        })();
-        </script>
-{%- endif %}
 {%- endblock %}
