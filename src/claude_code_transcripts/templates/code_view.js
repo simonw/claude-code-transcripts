@@ -158,29 +158,25 @@ function extractPromptNum(userHtml) {
 }
 
 // Build maps for range colors and message numbers
-// Ranges with the same msg_id get the same color and number
+// Ranges with the same prompt number get the same color
 function buildRangeMaps(blameRanges) {
     const colorMap = new Map();      // range index -> color
     const msgNumMap = new Map();     // range index -> user message number
-    const msgIdToColor = new Map();  // msg_id -> color
-    const msgIdToNum = new Map();    // msg_id -> user message number
+    const promptToColor = new Map(); // prompt number -> color
     let colorIndex = 0;
 
     blameRanges.forEach((range, index) => {
         if (range.msg_id) {
-            // Check if we've already seen this msg_id
-            if (!msgIdToColor.has(range.msg_id)) {
-                msgIdToColor.set(range.msg_id, rangeColors[colorIndex % rangeColors.length]);
-                colorIndex++;
-                // Extract prompt number from user_html
-                const promptNum = extractPromptNum(range.user_html);
-                if (promptNum) {
-                    msgIdToNum.set(range.msg_id, promptNum);
+            // Extract prompt number from user_html
+            const promptNum = extractPromptNum(range.user_html);
+            if (promptNum) {
+                msgNumMap.set(index, promptNum);
+                // Assign color based on prompt number, not msg_id
+                if (!promptToColor.has(promptNum)) {
+                    promptToColor.set(promptNum, rangeColors[colorIndex % rangeColors.length]);
+                    colorIndex++;
                 }
-            }
-            colorMap.set(index, msgIdToColor.get(range.msg_id));
-            if (msgIdToNum.has(range.msg_id)) {
-                msgNumMap.set(index, msgIdToNum.get(range.msg_id));
+                colorMap.set(index, promptToColor.get(promptNum));
             }
         }
     });
