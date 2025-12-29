@@ -878,17 +878,17 @@ class TestGenerateCodeViewHtml:
         # The content should be preserved correctly in JSON
         assert data["fileData"]["/test/path.js"]["content"] == content
 
-    def test_escapes_html_closing_tags_in_embedded_json(self, tmp_path):
-        """Test that </div> and other HTML closing tags are escaped in embedded JSON.
+    def test_escapes_html_sequences_in_embedded_json(self, tmp_path):
+        """Test that HTML sequences are escaped in embedded JSON.
 
-        When JSON is embedded in a <script> tag, the browser's HTML parser can
-        mistake </div> or </p> in the JSON string as actual HTML closing tags,
-        breaking script parsing with "Unexpected token '<'" errors.
+        When JSON is embedded in a <script> tag, the browser's HTML parser can:
+        1. Mistake </div> or </p> as actual HTML closing tags
+        2. Interpret <!-- as an HTML comment start
+
+        Both break script parsing with "Unexpected token '<'" errors.
         """
-        import json
-
-        # This content won't break, but user_html in blame_ranges will
-        content = "test content"
+        # Content with HTML comment that would break script parsing
+        content = "<!-- This is a comment -->\nsome code"
 
         operations = [
             FileOperation(
@@ -911,18 +911,18 @@ class TestGenerateCodeViewHtml:
 
         html = (tmp_path / "code.html").read_text()
 
-        # The </div> should be escaped as <\/div> in the embedded script
-        assert (
-            r"<\/div>" in html
-        ), "HTML closing tags should be escaped in embedded JSON"
-        # The unescaped version should NOT appear inside the script
-        # (it can appear elsewhere in the HTML, just not in the JSON)
+        # Find the embedded script section
         script_start = html.find("window.CODE_DATA")
         script_end = html.find("</script>", script_start)
         embedded_json = html[script_start:script_end]
-        assert (
-            "</div>" not in embedded_json
-        ), "Unescaped </div> should not be in embedded JSON"
+
+        # The </div> should be escaped as <\/div> in the embedded script
+        assert r"<\/div>" in html, "HTML closing tags should be escaped"
+        assert "</div>" not in embedded_json, "Unescaped </div> in embedded JSON"
+
+        # The <!-- should be escaped as <\!-- in the embedded script
+        assert r"<\!--" in embedded_json, "HTML comments should be escaped"
+        assert "<!--" not in embedded_json, "Unescaped <!-- in embedded JSON"
 
 
 class TestBuildMsgToUserHtml:
