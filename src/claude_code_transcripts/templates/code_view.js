@@ -901,6 +901,25 @@ async function init() {
         }
 
         if (lineNumber) {
+            // Helper to scroll to line and select blame
+            const scrollAndSelect = () => {
+                scrollEditorToLine(lineNumber);
+                // Find and highlight the range at this line
+                if (currentBlameRanges.length > 0 && currentEditor) {
+                    const rangeIndex = currentBlameRanges.findIndex(r =>
+                        lineNumber >= r.start && lineNumber <= r.end
+                    );
+                    if (rangeIndex >= 0) {
+                        const range = currentBlameRanges[rangeIndex];
+                        highlightRange(rangeIndex, currentBlameRanges, currentEditor);
+                        // Also scroll transcript to the corresponding message
+                        if (range.msg_id) {
+                            scrollToMessage(range.msg_id);
+                        }
+                    }
+                }
+            };
+
             // If we have a file path and it's different from current, load it
             if (filePath && filePath !== currentFilePath) {
                 // Find and click the file in the tree
@@ -909,22 +928,13 @@ async function init() {
                     document.querySelectorAll('.tree-file.selected').forEach(el => el.classList.remove('selected'));
                     fileEl.classList.add('selected');
                     loadFile(filePath);
+                    // Wait for file to load (loadFile uses setTimeout 10ms + rendering time)
+                    setTimeout(scrollAndSelect, 100);
                 }
+            } else {
+                // Same file, just scroll
+                requestAnimationFrame(scrollAndSelect);
             }
-
-            // Wait for editor to be ready, then scroll to line
-            requestAnimationFrame(() => {
-                scrollEditorToLine(lineNumber);
-                // Find and highlight the range at this line
-                if (currentBlameRanges.length > 0 && currentEditor) {
-                    const rangeIndex = currentBlameRanges.findIndex(r =>
-                        lineNumber >= r.start && lineNumber <= r.end
-                    );
-                    if (rangeIndex >= 0) {
-                        highlightRange(rangeIndex, currentBlameRanges, currentEditor);
-                    }
-                }
-            });
             return true;
         }
         return false;

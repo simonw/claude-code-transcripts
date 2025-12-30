@@ -253,7 +253,7 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .cm-content { font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace; }
 .cm-line[data-range-index] { cursor: pointer; position: relative; }
 .cm-line:focus { outline: none; }
-.cm-active-range { background: rgba(25, 118, 210, 0.2) !important; }
+.cm-active-range { background: rgba(255, 235, 59, 0.5) !important; }
 .blame-msg-num { position: absolute; right: 16px; color: #9e9e9e; font-size: 0.75rem; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; pointer-events: none; }
 
 /* Transcript Panel */

@@ -307,7 +307,9 @@ class TestTranscriptPanel:
         # Check that label shows "User Prompt #N"
         pinned_label = code_view_page.locator(".pinned-user-message-label")
         label_text = pinned_label.text_content()
-        assert label_text.startswith("User Prompt #"), f"Label should show 'User Prompt #N', got: {label_text}"
+        assert label_text.startswith(
+            "User Prompt #"
+        ), f"Label should show 'User Prompt #N', got: {label_text}"
 
         # Check that content matches the user message
         pinned_text = pinned_content.text_content()
