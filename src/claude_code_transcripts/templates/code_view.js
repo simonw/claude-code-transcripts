@@ -838,14 +838,17 @@ async function init() {
             currentBlameRanges = fileInfo.blame_ranges || [];
             createEditor(codeContent, content, currentBlameRanges, path);
 
-            // Auto-select the first blame range: highlight in editor only
-            // Don't auto-scroll transcript - that would render thousands of messages
-            // User can click the blame range to navigate to the message
+            // Auto-select the first blame range and scroll transcript to it
+            // With windowed rendering + teleportation, this is now fast
             const firstOpIndex = currentBlameRanges.findIndex(r => r.msg_id);
             if (firstOpIndex >= 0) {
                 const firstOpRange = currentBlameRanges[firstOpIndex];
                 scrollEditorToLine(firstOpRange.start);
                 highlightRange(firstOpIndex, currentBlameRanges, currentEditor);
+                // Scroll transcript to the corresponding message
+                if (firstOpRange.msg_id) {
+                    scrollToMessage(firstOpRange.msg_id);
+                }
             }
         }, 10);
     }
@@ -1114,6 +1117,26 @@ async function init() {
         return text;
     }
 
+    // Get the prompt number for a user message by counting user messages before it
+    function getPromptNumber(messageEl) {
+        const msgId = messageEl.id;
+        if (!msgId) return null;
+
+        const msgIndex = msgIdToIndex.get(msgId);
+        if (msgIndex === undefined) return null;
+
+        // Count user messages from start up to this message
+        let promptNum = 0;
+        for (let i = 0; i <= msgIndex && i < messagesData.length; i++) {
+            const msg = messagesData[i];
+            if (msg.html && msg.html.includes('class="message user"') &&
+                !msg.html.includes('class="continuation"')) {
+                promptNum++;
+            }
+        }
+        return promptNum;
+    }
+
     function updatePinnedUserMessage() {
         if (!pinnedUserMessage || !transcriptContent || !transcriptPanel) return;
         if (isInitializing || isScrollingToTarget) return;  // Skip during scrolling to avoid repeated updates
@@ -1131,17 +1154,35 @@ async function init() {
         const topThreshold = panelRect.top + headerHeight + pinnedHeight + 10;
 
         let messageToPin = null;
+        let nextUserMessage = null;
+
         for (const msg of userMessages) {
-            if (msg.getBoundingClientRect().bottom < topThreshold) {
+            const msgRect = msg.getBoundingClientRect();
+            if (msgRect.bottom < topThreshold) {
                 messageToPin = msg;
             } else {
+                // This is the first user message that's visible
+                nextUserMessage = msg;
                 break;
+            }
+        }
+
+        // Hide pinned if the next user message would overlap with the pinned area
+        // (i.e., its top is within the pinned header zone)
+        if (messageToPin && nextUserMessage) {
+            const nextRect = nextUserMessage.getBoundingClientRect();
+            const pinnedBottomThreshold = panelRect.top + headerHeight + pinnedHeight + 5;
+            if (nextRect.top < pinnedBottomThreshold) {
+                // Next user message is overlapping - hide the pinned
+                messageToPin = null;
             }
         }
 
         if (messageToPin && messageToPin !== currentPinnedMessage) {
             currentPinnedMessage = messageToPin;
-            pinnedUserContent.textContent = extractUserMessageText(messageToPin);
+            const promptNum = getPromptNumber(messageToPin);
+            const promptLabel = promptNum ? `#${promptNum}` : '';
+            pinnedUserContent.textContent = `${promptLabel} ${extractUserMessageText(messageToPin)}`.trim();
             pinnedUserMessage.style.display = 'block';
             pinnedUserMessage.onclick = () => {
                 messageToPin.scrollIntoView({ behavior: 'smooth', block: 'start' });

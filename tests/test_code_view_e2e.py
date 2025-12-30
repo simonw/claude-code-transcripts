@@ -304,11 +304,14 @@ class TestTranscriptPanel:
         # Pinned header should be visible with content from the first user message
         expect(pinned).to_be_visible()
         pinned_text = pinned_content.text_content()
-        # The pinned text should be a truncated prefix of the user message
+        # The pinned text should have format "#N message text..."
         assert len(pinned_text) > 0, "Pinned content should not be empty"
+        assert pinned_text.startswith("#"), "Pinned text should start with prompt number"
+        # Strip the prompt number prefix (e.g., "#1 ") to compare with message text
+        pinned_text_without_num = re.sub(r"^#\d+\s*", "", pinned_text)
         assert (
-            first_user_text.startswith(pinned_text[:50])
-            or pinned_text in first_user_text
+            first_user_text.startswith(pinned_text_without_num[:50])
+            or pinned_text_without_num in first_user_text
         ), f"Pinned text '{pinned_text[:50]}...' should match user message"
 
     def test_pinned_user_message_click_scrolls_back(self, code_view_page: Page):

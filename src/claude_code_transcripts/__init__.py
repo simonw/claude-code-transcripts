@@ -1050,7 +1050,7 @@ def is_tool_result_message(message_data):
     )
 
 
-def render_message(log_type, message_json, timestamp):
+def render_message(log_type, message_json, timestamp, prompt_num=None):
     if not message_json:
         return ""
     try:
@@ -1063,7 +1063,8 @@ def render_message(log_type, message_json, timestamp):
         if is_tool_result_message(message_data):
             role_class, role_label = "tool-reply", "Tool reply"
         else:
-            role_class, role_label = "user", "User"
+            role_class = "user"
+            role_label = f"User #{prompt_num}" if prompt_num else "User"
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
@@ -1639,6 +1640,9 @@ def generate_html(
     # Collect messages per page for potential page-data.json
     page_messages_dict = {}
 
+    # Track prompt number across all pages
+    prompt_num = 0
+
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -1657,7 +1661,19 @@ def generate_html(
                         end="",
                         flush=True,
                     )
-                msg_html = render_message(log_type, message_json, timestamp)
+                # Track prompt number for user messages (not tool results)
+                current_prompt_num = None
+                if log_type == "user" and message_json:
+                    try:
+                        message_data = json.loads(message_json)
+                        if not is_tool_result_message(message_data):
+                            prompt_num += 1
+                            current_prompt_num = prompt_num
+                    except json.JSONDecodeError:
+                        pass
+                msg_html = render_message(
+                    log_type, message_json, timestamp, current_prompt_num
+                )
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
                     if is_first and conv.get("is_continuation"):
@@ -2232,6 +2248,9 @@ def generate_html_from_session_data(
     # Collect messages per page for potential page-data.json
     page_messages_dict = {}
 
+    # Track prompt number across all pages
+    prompt_num = 0
+
     for page_num in range(1, total_pages + 1):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
@@ -2249,7 +2268,19 @@ def generate_html_from_session_data(
                         f"\rPage {page_num}/{total_pages}: rendering message {msg_count}/{total_page_messages}...",
                         nl=False,
                     )
-                msg_html = render_message(log_type, message_json, timestamp)
+                # Track prompt number for user messages (not tool results)
+                current_prompt_num = None
+                if log_type == "user" and message_json:
+                    try:
+                        message_data = json.loads(message_json)
+                        if not is_tool_result_message(message_data):
+                            prompt_num += 1
+                            current_prompt_num = prompt_num
+                    except json.JSONDecodeError:
+                        pass
+                msg_html = render_message(
+                    log_type, message_json, timestamp, current_prompt_num
+                )
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
                     if is_first and conv.get("is_continuation"):
