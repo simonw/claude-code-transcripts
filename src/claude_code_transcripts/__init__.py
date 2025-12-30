@@ -1064,7 +1064,7 @@ def render_message(log_type, message_json, timestamp, prompt_num=None):
             role_class, role_label = "tool-reply", "Tool reply"
         else:
             role_class = "user"
-            role_label = f"User #{prompt_num}" if prompt_num else "User"
+            role_label = f"User Prompt #{prompt_num}" if prompt_num else "User"
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
