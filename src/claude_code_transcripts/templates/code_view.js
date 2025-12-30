@@ -655,8 +655,12 @@ async function init() {
         windowStart = promptStart;
         windowEnd = promptStart - 1;  // Will be updated by appendMessages
 
-        // Render initial chunk around the target
-        const initialEnd = Math.min(promptStart + CHUNK_SIZE - 1, messagesData.length - 1);
+        // Render from user prompt up to AND INCLUDING the target message
+        // This ensures the target is always in the DOM after teleporting
+        const initialEnd = Math.max(
+            Math.min(promptStart + CHUNK_SIZE - 1, messagesData.length - 1),
+            targetIndex
+        );
         appendMessages(promptStart, initialEnd);
 
         // Set up observers for the new sentinels
