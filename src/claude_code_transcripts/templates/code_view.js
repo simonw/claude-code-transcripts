@@ -446,11 +446,13 @@ async function init() {
                     const rangeIndex = line.getAttribute('data-range-index');
                     if (rangeIndex !== null) {
                         highlightRange(parseInt(rangeIndex), blameRanges, view);
-                        // Update URL hash for deep-linking (don't scroll transcript -
-                        // that would render thousands of messages and hang the browser)
                         const range = blameRanges[parseInt(rangeIndex)];
                         if (range) {
                             updateLineHash(range.start);
+                            // Scroll to the corresponding message in the transcript
+                            if (range.msg_id) {
+                                scrollToMessage(range.msg_id);
+                            }
                         }
                     }
                 }

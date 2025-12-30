@@ -561,10 +561,30 @@ class TestChunkedRendering:
             blame_lines.first.click()
             code_view_page.wait_for_timeout(200)
 
-            # The code range should be highlighted (not the transcript message,
-            # as that would require rendering thousands of DOM nodes for large transcripts)
+            # The code range should be highlighted
             active_range = code_view_page.locator(".cm-active-range")
             expect(active_range.first).to_be_visible()
+
+    def test_clicking_blame_scrolls_to_transcript_message(self, code_view_page: Page):
+        """Test that clicking a blame block scrolls to the corresponding transcript message."""
+        blame_lines = code_view_page.locator(".cm-line[data-msg-id]")
+
+        if blame_lines.count() > 0:
+            # Get the msg_id from the blame line
+            first_blame = blame_lines.first
+            msg_id = first_blame.get_attribute("data-msg-id")
+
+            if msg_id:
+                # Click the blame line
+                first_blame.click()
+
+                # Wait for the transcript to scroll and render the message
+                code_view_page.wait_for_timeout(500)
+
+                # The corresponding message should be visible and highlighted in the transcript
+                message = code_view_page.locator(f"#{msg_id}")
+                expect(message).to_be_visible(timeout=5000)
+                expect(message).to_have_class(re.compile(r"highlighted"))
 
     def test_intersection_observer_setup(self, code_view_page: Page):
         """Test that IntersectionObserver is set up for lazy loading."""
