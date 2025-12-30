@@ -522,7 +522,9 @@ class TestChunkedRendering:
             "getGistDataUrl" in script_content
         ), "getGistDataUrl should be defined for gist fetching"
         assert "CHUNK_SIZE" in script_content, "CHUNK_SIZE should be defined"
-        assert "renderedCount" in script_content, "renderedCount should be defined"
+        # Windowed rendering uses windowStart/windowEnd instead of renderedCount
+        assert "windowStart" in script_content, "windowStart should be defined"
+        assert "windowEnd" in script_content, "windowEnd should be defined"
 
     def test_scroll_loads_more_messages(self, code_view_page: Page):
         """Test that scrolling the transcript loads more messages."""

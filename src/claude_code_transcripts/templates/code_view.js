@@ -170,9 +170,30 @@ async function init() {
     const fileData = data.fileData;
     const messagesData = data.messagesData;
 
-    // Chunked rendering state
+    // Windowed rendering state
+    // We render a "window" of messages, not necessarily starting from 0
     const CHUNK_SIZE = 50;
-    let renderedCount = 0;
+    let windowStart = 0;      // First rendered message index
+    let windowEnd = -1;       // Last rendered message index (-1 = none rendered)
+
+    // For backwards compatibility
+    function getRenderedCount() {
+        return windowEnd - windowStart + 1;
+    }
+
+    // Find the user prompt that contains a given message index
+    // Scans backwards to find a message with class "user" (non-continuation)
+    function findUserPromptIndex(targetIndex) {
+        for (let i = targetIndex; i >= 0; i--) {
+            const msg = messagesData[i];
+            // Check if this is a user message (not a continuation)
+            if (msg.html && msg.html.includes('class="message user"') &&
+                !msg.html.includes('class="continuation"')) {
+                return i;
+            }
+        }
+        return 0; // Fallback to start
+    }
 
     // Build ID-to-index map for fast lookup
     const msgIdToIndex = new Map();
@@ -552,63 +573,179 @@ async function init() {
         });
     }
 
-    // Render a single chunk of messages (synchronous)
-    function renderChunk(startIdx, endIdx) {
+    // Append messages to the end of the transcript
+    function appendMessages(startIdx, endIdx) {
         const transcriptContent = document.getElementById('transcript-content');
-        const initialCount = renderedCount;
+        const sentinel = document.getElementById('transcript-sentinel');
+        let added = false;
 
-        while (renderedCount <= endIdx && renderedCount < messagesData.length) {
-            const msg = messagesData[renderedCount];
-            const div = document.createElement('div');
-            div.innerHTML = msg.html;
-            while (div.firstChild) {
-                transcriptContent.appendChild(div.firstChild);
+        for (let i = startIdx; i <= endIdx && i < messagesData.length; i++) {
+            if (i > windowEnd) {
+                const msg = messagesData[i];
+                const div = document.createElement('div');
+                div.innerHTML = msg.html;
+                while (div.firstChild) {
+                    // Insert before the sentinel
+                    transcriptContent.insertBefore(div.firstChild, sentinel);
+                }
+                windowEnd = i;
+                added = true;
             }
-            renderedCount++;
         }
 
-        if (renderedCount > initialCount) {
+        if (added) {
             initTruncation(transcriptContent);
             formatTimestamps(transcriptContent);
         }
     }
 
-    // Render messages up to targetIndex synchronously (for small jumps)
+    // Prepend messages to the beginning of the transcript
+    function prependMessages(startIdx, endIdx) {
+        const transcriptContent = document.getElementById('transcript-content');
+        const topSentinel = document.getElementById('transcript-sentinel-top');
+        let added = false;
+
+        // Prepend in reverse order so they appear in correct sequence
+        for (let i = endIdx; i >= startIdx && i >= 0; i--) {
+            if (i < windowStart) {
+                const msg = messagesData[i];
+                const div = document.createElement('div');
+                div.innerHTML = msg.html;
+                // Insert all children after the top sentinel
+                const children = Array.from(div.childNodes);
+                const insertPoint = topSentinel ? topSentinel.nextSibling : transcriptContent.firstChild;
+                children.forEach(child => {
+                    transcriptContent.insertBefore(child, insertPoint);
+                });
+                windowStart = i;
+                added = true;
+            }
+        }
+
+        if (added) {
+            initTruncation(transcriptContent);
+            formatTimestamps(transcriptContent);
+        }
+    }
+
+    // Clear and rebuild transcript starting from a specific index
+    function teleportToMessage(targetIndex) {
+        const transcriptContent = document.getElementById('transcript-content');
+        const transcriptPanel = document.getElementById('transcript-panel');
+
+        // Find the user prompt containing this message
+        const promptStart = findUserPromptIndex(targetIndex);
+
+        // Clear existing content (except sentinels - we'll recreate them)
+        transcriptContent.innerHTML = '';
+
+        // Add top sentinel for upward loading
+        const topSentinel = document.createElement('div');
+        topSentinel.id = 'transcript-sentinel-top';
+        topSentinel.style.height = '1px';
+        transcriptContent.appendChild(topSentinel);
+
+        // Add bottom sentinel
+        const bottomSentinel = document.createElement('div');
+        bottomSentinel.id = 'transcript-sentinel';
+        bottomSentinel.style.height = '1px';
+        transcriptContent.appendChild(bottomSentinel);
+
+        // Reset window state
+        windowStart = promptStart;
+        windowEnd = promptStart - 1;  // Will be updated by appendMessages
+
+        // Render initial chunk around the target
+        const initialEnd = Math.min(promptStart + CHUNK_SIZE - 1, messagesData.length - 1);
+        appendMessages(promptStart, initialEnd);
+
+        // Set up observers for the new sentinels
+        setupScrollObservers();
+
+        // Reset scroll position
+        transcriptPanel.scrollTop = 0;
+    }
+
+    // Render messages down to targetIndex (extending window downward)
+    function renderMessagesDownTo(targetIndex) {
+        if (targetIndex <= windowEnd) return;
+        appendMessages(windowEnd + 1, targetIndex);
+    }
+
+    // Render messages up to targetIndex (extending window upward)
     function renderMessagesUpTo(targetIndex) {
-        if (targetIndex < renderedCount) return;
-        renderChunk(renderedCount, targetIndex);
+        if (targetIndex >= windowStart) return;
+        prependMessages(targetIndex, windowStart - 1);
     }
 
-    // Render messages progressively with UI breaks (for large jumps)
-    // Returns a promise that resolves when rendering is complete
-    function renderMessagesProgressively(targetIndex) {
-        return new Promise((resolve) => {
-            if (targetIndex < renderedCount) {
-                resolve();
-                return;
-            }
-
-            const PROGRESSIVE_CHUNK_SIZE = 200; // Larger chunks for speed, with breaks between
-
-            function renderNextBatch() {
-                const batchEnd = Math.min(renderedCount + PROGRESSIVE_CHUNK_SIZE - 1, targetIndex);
-                renderChunk(renderedCount, batchEnd);
-
-                if (renderedCount <= targetIndex && renderedCount < messagesData.length) {
-                    // Use setTimeout to yield to the browser for UI updates
-                    setTimeout(renderNextBatch, 0);
-                } else {
-                    resolve();
-                }
-            }
-
-            renderNextBatch();
-        });
-    }
-
+    // Render next chunk downward (for lazy loading)
     function renderNextChunk() {
-        const targetIndex = Math.min(renderedCount + CHUNK_SIZE - 1, messagesData.length - 1);
-        renderMessagesUpTo(targetIndex);
+        const targetIndex = Math.min(windowEnd + CHUNK_SIZE, messagesData.length - 1);
+        appendMessages(windowEnd + 1, targetIndex);
+    }
+
+    // Render previous chunk upward (for lazy loading)
+    function renderPrevChunk() {
+        if (windowStart <= 0) return;
+        const targetIndex = Math.max(windowStart - CHUNK_SIZE, 0);
+        prependMessages(targetIndex, windowStart - 1);
+    }
+
+    // Check if target message is within or near the current window
+    function isNearCurrentWindow(msgIndex) {
+        if (windowEnd < 0) return false;  // Nothing rendered yet
+        const NEAR_THRESHOLD = CHUNK_SIZE * 2;
+        return msgIndex >= windowStart - NEAR_THRESHOLD &&
+               msgIndex <= windowEnd + NEAR_THRESHOLD;
+    }
+
+    // Scroll observers for lazy loading
+    let topObserver = null;
+    let bottomObserver = null;
+
+    function setupScrollObservers() {
+        // Clean up existing observers
+        if (topObserver) topObserver.disconnect();
+        if (bottomObserver) bottomObserver.disconnect();
+
+        const transcriptPanel = document.getElementById('transcript-panel');
+
+        // Bottom sentinel observer (load more below)
+        const bottomSentinel = document.getElementById('transcript-sentinel');
+        if (bottomSentinel) {
+            bottomObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && windowEnd < messagesData.length - 1) {
+                    renderNextChunk();
+                }
+            }, {
+                root: transcriptPanel,
+                rootMargin: '200px',
+            });
+            bottomObserver.observe(bottomSentinel);
+        }
+
+        // Top sentinel observer (load more above)
+        const topSentinel = document.getElementById('transcript-sentinel-top');
+        if (topSentinel) {
+            topObserver = new IntersectionObserver((entries) => {
+                if (entries[0].isIntersecting && windowStart > 0) {
+                    // Save scroll position before prepending
+                    const scrollTop = transcriptPanel.scrollTop;
+                    const scrollHeight = transcriptPanel.scrollHeight;
+
+                    renderPrevChunk();
+
+                    // Adjust scroll position to maintain visual position
+                    const newScrollHeight = transcriptPanel.scrollHeight;
+                    const heightDiff = newScrollHeight - scrollHeight;
+                    transcriptPanel.scrollTop = scrollTop + heightDiff;
+                }
+            }, {
+                root: transcriptPanel,
+                rootMargin: '200px',
+            });
+            topObserver.observe(topSentinel);
+        }
     }
 
     // Calculate sticky header offset
@@ -625,43 +762,56 @@ async function init() {
         return offset + 8;
     }
 
-    // Scroll to a message in the transcript (async for progressive rendering)
-    async function scrollToMessage(msgId) {
+    // Scroll to a message in the transcript
+    // Uses teleportation for distant messages to avoid rendering thousands of DOM nodes
+    function scrollToMessage(msgId) {
         const transcriptContent = document.getElementById('transcript-content');
         const transcriptPanel = document.getElementById('transcript-panel');
 
         const msgIndex = msgIdToIndex.get(msgId);
-        if (msgIndex !== undefined && msgIndex >= renderedCount) {
-            // Use progressive rendering for large jumps to keep UI responsive
-            await renderMessagesProgressively(msgIndex);
+        if (msgIndex === undefined) return;
+
+        // Check if message is far from current window - if so, teleport
+        if (!isNearCurrentWindow(msgIndex)) {
+            teleportToMessage(msgIndex);
+        } else if (msgIndex > windowEnd) {
+            // Message is just past our window, extend it
+            renderMessagesDownTo(msgIndex);
+        } else if (msgIndex < windowStart) {
+            // Message is just before our window, extend it
+            renderMessagesUpTo(msgIndex);
         }
 
-        const message = transcriptContent.querySelector(`#${msgId}`);
-        if (message) {
-            transcriptContent.querySelectorAll('.message.highlighted').forEach(el => {
-                el.classList.remove('highlighted');
-            });
-            message.classList.add('highlighted');
+        // Now the message should be rendered, find and highlight it
+        // Use requestAnimationFrame to ensure DOM is updated
+        requestAnimationFrame(() => {
+            const message = transcriptContent.querySelector(`#${CSS.escape(msgId)}`);
+            if (message) {
+                transcriptContent.querySelectorAll('.message.highlighted').forEach(el => {
+                    el.classList.remove('highlighted');
+                });
+                message.classList.add('highlighted');
 
-            const stickyOffset = getStickyHeaderOffset();
-            const messageTop = message.offsetTop;
-            const targetScroll = messageTop - stickyOffset;
+                const stickyOffset = getStickyHeaderOffset();
+                const messageTop = message.offsetTop;
+                const targetScroll = messageTop - stickyOffset;
 
-            // Suppress pinned message updates during scroll
-            isScrollingToTarget = true;
-            if (scrollTargetTimeout) clearTimeout(scrollTargetTimeout);
+                // Suppress pinned message updates during scroll
+                isScrollingToTarget = true;
+                if (scrollTargetTimeout) clearTimeout(scrollTargetTimeout);
 
-            transcriptPanel.scrollTo({
-                top: targetScroll,
-                behavior: 'smooth'
-            });
+                transcriptPanel.scrollTo({
+                    top: targetScroll,
+                    behavior: 'smooth'
+                });
 
-            // Re-enable pinned updates after scroll completes
-            scrollTargetTimeout = setTimeout(() => {
-                isScrollingToTarget = false;
-                updatePinnedUserMessage();
-            }, 500);
-        }
+                // Re-enable pinned updates after scroll completes
+                scrollTargetTimeout = setTimeout(() => {
+                    isScrollingToTarget = false;
+                    updatePinnedUserMessage();
+                }, 500);
+            }
+        });
     }
 
     // Load file content
@@ -930,22 +1080,21 @@ async function init() {
         });
     }
 
-    // Render initial chunk of messages
+    // Initialize transcript with windowed rendering
+    // Add top sentinel for upward lazy loading
+    const transcriptContentInit = document.getElementById('transcript-content');
+    const topSentinelInit = document.createElement('div');
+    topSentinelInit.id = 'transcript-sentinel-top';
+    topSentinelInit.style.height = '1px';
+    transcriptContentInit.insertBefore(topSentinelInit, transcriptContentInit.firstChild);
+
+    // Render initial chunk of messages (starting from 0)
+    windowStart = 0;
+    windowEnd = -1;
     renderNextChunk();
 
-    // Set up IntersectionObserver for lazy loading
-    const sentinel = document.getElementById('transcript-sentinel');
-    if (sentinel) {
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting && renderedCount < messagesData.length) {
-                renderNextChunk();
-            }
-        }, {
-            root: document.getElementById('transcript-panel'),
-            rootMargin: '200px',
-        });
-        observer.observe(sentinel);
-    }
+    // Set up scroll observers for bi-directional lazy loading
+    setupScrollObservers();
 
     // Sticky user message header
     const pinnedUserMessage = document.getElementById('pinned-user-message');
