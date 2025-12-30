@@ -1102,6 +1102,7 @@ async function init() {
     // Sticky user message header
     const pinnedUserMessage = document.getElementById('pinned-user-message');
     const pinnedUserContent = pinnedUserMessage?.querySelector('.pinned-user-content');
+    const pinnedUserLabel = pinnedUserMessage?.querySelector('.pinned-user-message-label');
     const transcriptPanel = document.getElementById('transcript-panel');
     const transcriptContent = document.getElementById('transcript-content');
     let currentPinnedMessage = null;
@@ -1192,8 +1193,11 @@ async function init() {
         if (messageToPin && messageToPin !== currentPinnedMessage) {
             currentPinnedMessage = messageToPin;
             const promptNum = getPromptNumber(messageToPin);
-            const promptLabel = promptNum ? `#${promptNum}` : '';
-            pinnedUserContent.textContent = `${promptLabel} ${extractUserMessageText(messageToPin)}`.trim();
+            // Update label with prompt number
+            if (pinnedUserLabel) {
+                pinnedUserLabel.textContent = promptNum ? `User Prompt #${promptNum}` : 'User Prompt';
+            }
+            pinnedUserContent.textContent = extractUserMessageText(messageToPin);
             pinnedUserMessage.style.display = 'block';
             pinnedUserMessage.onclick = () => {
                 messageToPin.scrollIntoView({ behavior: 'smooth', block: 'start' });
