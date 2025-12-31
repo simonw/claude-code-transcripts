@@ -408,6 +408,7 @@ class TestStripAnsi:
         text = "name\x1b]0;Title\x1b\\end"
         assert strip_ansi(text) == "nameend"
 
+
 class TestAnalyzeConversation:
     """Tests for conversation analysis."""
 

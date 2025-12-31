@@ -1508,7 +1508,11 @@ def generate_html(json_path, output_dir, github_repo=None):
             paired_tool_ids = set()
             for log_type, message_data, timestamp in parsed_messages:
                 msg_html = render_message_with_tool_pairs(
-                    log_type, message_data, timestamp, tool_result_lookup, paired_tool_ids
+                    log_type,
+                    message_data,
+                    timestamp,
+                    tool_result_lookup,
+                    paired_tool_ids,
                 )
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
@@ -2002,7 +2006,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             paired_tool_ids = set()
             for log_type, message_data, timestamp in parsed_messages:
                 msg_html = render_message_with_tool_pairs(
-                    log_type, message_data, timestamp, tool_result_lookup, paired_tool_ids
+                    log_type,
+                    message_data,
+                    timestamp,
+                    tool_result_lookup,
+                    paired_tool_ids,
                 )
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
