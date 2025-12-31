@@ -1047,11 +1047,12 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
 });
 """
 
-# JavaScript to fix relative URLs when served via gistpreview.github.io
+# JavaScript to fix relative URLs when served via gisthost.github.io or gistpreview.github.io
 GIST_PREVIEW_JS = r"""
 (function() {
-    if (window.location.hostname !== 'gistpreview.github.io') return;
-    // URL format: https://gistpreview.github.io/?GIST_ID/filename.html
+    var hostname = window.location.hostname;
+    if (hostname !== 'gisthost.github.io' && hostname !== 'gistpreview.github.io') return;
+    // URL format: https://gisthost.github.io/?GIST_ID/filename.html
     var match = window.location.search.match(/^\?([^/]+)/);
     if (!match) return;
     var gistId = match[1];
@@ -1067,7 +1068,7 @@ GIST_PREVIEW_JS = r"""
     });
 
     // Handle fragment navigation after dynamic content loads
-    // gistpreview.github.io loads content dynamically, so the browser's
+    // gisthost.github.io/gistpreview.github.io loads content dynamically, so the browser's
     // native fragment navigation fails because the element doesn't exist yet
     function scrollToFragment() {
         var hash = window.location.hash;
@@ -1355,7 +1356,7 @@ def cli():
 @click.option(
     "--gist",
     is_flag=True,
-    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+    help="Upload to GitHub Gist and output a gisthost.github.io URL.",
 )
 @click.option(
     "--json",
@@ -1443,7 +1444,7 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
@@ -1512,7 +1513,7 @@ def fetch_url_to_tempfile(url):
 @click.option(
     "--gist",
     is_flag=True,
-    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+    help="Upload to GitHub Gist and output a gisthost.github.io URL.",
 )
 @click.option(
     "--json",
@@ -1574,7 +1575,7 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
@@ -1823,7 +1824,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
 @click.option(
     "--gist",
     is_flag=True,
-    help="Upload to GitHub Gist and output a gistpreview.github.io URL.",
+    help="Upload to GitHub Gist and output a gisthost.github.io URL.",
 )
 @click.option(
     "--json",
@@ -1937,7 +1938,7 @@ def web_cmd(
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gistpreview.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 

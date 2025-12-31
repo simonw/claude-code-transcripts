@@ -596,7 +596,7 @@ class TestSessionGistOption:
         assert result.exit_code == 0
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
-        assert "gistpreview.github.io" in result.output
+        assert "gisthost.github.io" in result.output
 
     def test_session_gist_with_output_dir(self, monkeypatch, output_dir):
         """Test that session --gist with -o uses specified directory."""
@@ -627,9 +627,9 @@ class TestSessionGistOption:
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
-        # Verify JS was injected
+        # Verify JS was injected (checks for both domains for backwards compatibility)
         index_content = (output_dir / "index.html").read_text(encoding="utf-8")
-        assert "gistpreview.github.io" in index_content
+        assert "gisthost.github.io" in index_content
 
 
 class TestContinuationLongTexts:
@@ -874,7 +874,7 @@ class TestImportGistOption:
         assert result.exit_code == 0
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
-        assert "gistpreview.github.io" in result.output
+        assert "gisthost.github.io" in result.output
 
 
 class TestVersionOption:
