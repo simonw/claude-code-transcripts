@@ -727,6 +727,63 @@ def render_markdown_text(text):
     return markdown.markdown(text, extensions=["fenced_code", "tables"])
 
 
+def render_json_with_markdown(obj, indent=0):
+    """Render a JSON object/dict with string values as Markdown.
+
+    Recursively traverses the object and renders string values as Markdown HTML.
+    Non-string values (numbers, booleans, null) are rendered as-is.
+    """
+    indent_str = "  " * indent
+    next_indent = "  " * (indent + 1)
+
+    if isinstance(obj, dict):
+        if not obj:
+            return "{}"
+        lines = ["{"]
+        items = list(obj.items())
+        for i, (key, value) in enumerate(items):
+            comma = "," if i < len(items) - 1 else ""
+            rendered_value = render_json_with_markdown(value, indent + 1)
+            lines.append(
+                f'{next_indent}<span class="json-key">"{html.escape(str(key))}"</span>: {rendered_value}{comma}'
+            )
+        lines.append(f"{indent_str}}}")
+        return "\n".join(lines)
+    elif isinstance(obj, list):
+        if not obj:
+            return "[]"
+        lines = ["["]
+        for i, item in enumerate(obj):
+            comma = "," if i < len(obj) - 1 else ""
+            rendered_item = render_json_with_markdown(item, indent + 1)
+            lines.append(f"{next_indent}{rendered_item}{comma}")
+        lines.append(f"{indent_str}]")
+        return "\n".join(lines)
+    elif isinstance(obj, str):
+        # Render string value as Markdown, wrap in a styled span
+        md_html = render_markdown_text(obj)
+        # Strip wrapping <p> tags for inline display if it's a single paragraph
+        if (
+            md_html.startswith("<p>")
+            and md_html.endswith("</p>")
+            and md_html.count("<p>") == 1
+        ):
+            md_html = md_html[3:-4]
+        return f'<span class="json-string-value">{md_html}</span>'
+    elif isinstance(obj, bool):
+        return (
+            '<span class="json-bool">true</span>'
+            if obj
+            else '<span class="json-bool">false</span>'
+        )
+    elif obj is None:
+        return '<span class="json-null">null</span>'
+    elif isinstance(obj, (int, float)):
+        return f'<span class="json-number">{obj}</span>'
+    else:
+        return f'<span class="json-value">{html.escape(str(obj))}</span>'
+
+
 def is_json_like(text):
     if not text or not isinstance(text, str):
         return False
@@ -767,10 +824,11 @@ def render_edit_tool(tool_input, tool_id):
 
 
 def render_bash_tool(tool_input, tool_id):
-    """Render Bash tool calls with command as plain text."""
+    """Render Bash tool calls with command as plain text and description as Markdown."""
     command = tool_input.get("command", "")
     description = tool_input.get("description", "")
-    return _macros.bash_tool(command, description, tool_id)
+    description_html = render_markdown_text(description) if description else ""
+    return _macros.bash_tool(command, description_html, tool_id)
 
 
 def render_content_block(block):
@@ -801,9 +859,10 @@ def render_content_block(block):
         if tool_name == "Bash":
             return render_bash_tool(tool_input, tool_id)
         description = tool_input.get("description", "")
+        description_html = render_markdown_text(description) if description else ""
         display_input = {k: v for k, v in tool_input.items() if k != "description"}
-        input_json = json.dumps(display_input, indent=2, ensure_ascii=False)
-        return _macros.tool_use(tool_name, description, input_json, tool_id)
+        input_html = render_json_with_markdown(display_input)
+        return _macros.tool_use(tool_name, description_html, input_html, tool_id)
     elif block_type == "tool_result":
         content = block.get("content", "")
         is_error = block.get("is_error", False)
@@ -1113,6 +1172,18 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.tool-description p { margin: 0; }
+.tool-input-rendered { font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.5; }
+.json-key { color: #0d47a1; }
+.json-string-value { color: #1b5e20; }
+.json-string-value p { display: inline; margin: 0; }
+.json-string-value code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; }
+.json-string-value strong { font-weight: 600; }
+.json-string-value em { font-style: italic; }
+.json-string-value a { color: #1976d2; text-decoration: underline; }
+.json-number { color: #e65100; }
+.json-bool { color: #7b1fa2; }
+.json-null { color: #78909c; }
 .tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .tool-result.tool-error { background: var(--tool-error-bg); }
 .tool-pair { border: 1px solid var(--tool-border); border-radius: 8px; padding: 8px; margin: 12px 0; background: rgba(156, 39, 176, 0.06); }

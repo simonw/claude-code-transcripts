@@ -11,6 +11,7 @@ from claude_code_transcripts import (
     generate_html,
     detect_github_repo,
     render_markdown_text,
+    render_json_with_markdown,
     format_json,
     is_json_like,
     render_todo_write,
@@ -212,6 +213,49 @@ class TestRenderFunctions:
         }
         result = render_bash_tool(tool_input, "tool-123")
         assert result == snapshot_html
+
+    def test_render_bash_tool_markdown_description(self):
+        """Test Bash tool renders description as Markdown."""
+        tool_input = {
+            "command": "echo hello",
+            "description": "This is **bold** and _italic_ text",
+        }
+        result = render_bash_tool(tool_input, "tool-123")
+        assert "<strong>bold</strong>" in result
+        assert "<em>italic</em>" in result
+
+    def test_render_json_with_markdown_simple(self):
+        """Test JSON rendering with Markdown in string values."""
+        obj = {"key": "This is **bold** text"}
+        result = render_json_with_markdown(obj)
+        assert "json-key" in result
+        assert "json-string-value" in result
+        assert "<strong>bold</strong>" in result
+
+    def test_render_json_with_markdown_nested(self):
+        """Test nested JSON rendering with Markdown."""
+        obj = {
+            "outer": {"inner": "Contains `code` markup"},
+            "list": ["item with **bold**", "plain item"],
+        }
+        result = render_json_with_markdown(obj)
+        assert "<code>code</code>" in result
+        assert "<strong>bold</strong>" in result
+
+    def test_render_json_with_markdown_types(self):
+        """Test JSON rendering preserves non-string types."""
+        obj = {
+            "string": "text",
+            "number": 42,
+            "float": 3.14,
+            "bool_true": True,
+            "bool_false": False,
+            "null": None,
+        }
+        result = render_json_with_markdown(obj)
+        assert "json-number" in result
+        assert "json-bool" in result
+        assert "json-null" in result
 
 
 class TestRenderContentBlock:

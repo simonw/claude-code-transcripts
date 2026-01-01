@@ -38,6 +38,18 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.tool-description p { margin: 0; }
+.tool-input-rendered { font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.5; }
+.json-key { color: #0d47a1; }
+.json-string-value { color: #1b5e20; }
+.json-string-value p { display: inline; margin: 0; }
+.json-string-value code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; }
+.json-string-value strong { font-weight: 600; }
+.json-string-value em { font-style: italic; }
+.json-string-value a { color: #1976d2; text-decoration: underline; }
+.json-number { color: #e65100; }
+.json-bool { color: #7b1fa2; }
+.json-null { color: #78909c; }
 .tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .tool-result.tool-error { background: var(--tool-error-bg); }
 .tool-pair { border: 1px solid var(--tool-border); border-radius: 8px; padding: 8px; margin: 12px 0; background: rgba(156, 39, 176, 0.06); }
@@ -214,7 +226,7 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 <div class="tool-pair">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_001">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-<div class="tool-description">Run pytest on tests directory</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/</pre></div><button class="expand-btn">Show more</button></div>
+<div class="tool-description"><p>Run pytest on tests directory</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/</pre></div><button class="expand-btn">Show more</button></div>
 </div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>===== test session starts =====
 collected 2 items
 
@@ -229,14 +241,14 @@ tests/test_math.py ..  [100%]
 <div class="tool-pair">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_002">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-<div class="tool-description">Commit changes</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add math_utils with add function&#39;</pre></div><button class="expand-btn">Show more</button></div>
+<div class="tool-description"><p>Commit changes</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add math_utils with add function&#39;</pre></div><button class="expand-btn">Show more</button></div>
 </div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><div class="commit-card"><a href="https://github.com/example/project/commit/abc1234"><span class="commit-card-hash">abc1234</span> Add math_utils with add function</a></div><pre>1 file changed, 5 insertions(+)</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-00-45-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-00-45-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:45.000Z" data-timestamp="2025-12-24T10:00:45.000Z">2025-12-24T10:00:45.000Z</time></a></div><div class="message-content">
 <div class="assistant-text"><p>Committed! Now pushing to remote.</p></div>
 <div class="tool-pair">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_003">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-<div class="tool-description">Push to remote</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git push -u origin main</pre></div><button class="expand-btn">Show more</button></div>
+<div class="tool-description"><p>Push to remote</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git push -u origin main</pre></div><button class="expand-btn">Show more</button></div>
 </div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>remote: 
 remote: Create a pull request for &#x27;main&#x27; on GitHub by visiting:
 remote:      https://github.com/example/project/pull/new/main
@@ -247,10 +259,10 @@ To github.com:example/project.git
 <div class="user-content"><p>Now edit the file to add a subtract function</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-01-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-01-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:05.000Z" data-timestamp="2025-12-24T10:01:05.000Z">2025-12-24T10:01:05.000Z</time></a></div><div class="message-content">
 <div class="tool-pair">
-<div class="tool-use" data-tool-id="toolu_glob_001"><div class="tool-header"><span class="tool-icon">⚙</span> Glob</div><div class="truncatable"><div class="truncatable-content"><pre class="json">{
-  &#34;pattern&#34;: &#34;**/*.py&#34;,
-  &#34;path&#34;: &#34;/project&#34;
-}</pre></div><button class="expand-btn">Show more</button></div></div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>/project/math_utils.py
+<div class="tool-use" data-tool-id="toolu_glob_001"><div class="tool-header"><span class="tool-icon">⚙</span> Glob</div><div class="truncatable"><div class="truncatable-content"><div class="tool-input-rendered">{
+  <span class="json-key">"pattern"</span>: <span class="json-string-value">*<em>/</em>.py</span>,
+  <span class="json-key">"path"</span>: <span class="json-string-value">/project</span>
+}</div></div><button class="expand-btn">Show more</button></div></div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>/project/math_utils.py
 /project/tests/test_math.py</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-01-15-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-01-15-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:15.000Z" data-timestamp="2025-12-24T10:01:15.000Z">2025-12-24T10:01:15.000Z</time></a></div><div class="message-content">
 <div class="tool-pair"><div class="file-tool edit-tool" data-tool-id="toolu_edit_001">
@@ -271,18 +283,18 @@ To github.com:example/project.git
 <div class="message assistant" id="msg-2025-12-24T10-01-25-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-01-25-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:25.000Z" data-timestamp="2025-12-24T10:01:25.000Z">2025-12-24T10:01:25.000Z</time></a></div><div class="message-content">
 <div class="assistant-text"><p>Added the subtract function. Let me verify with grep.</p></div>
 <div class="tool-pair">
-<div class="tool-use" data-tool-id="toolu_grep_001"><div class="tool-header"><span class="tool-icon">⚙</span> Grep</div><div class="truncatable"><div class="truncatable-content"><pre class="json">{
-  &#34;pattern&#34;: &#34;def subtract&#34;,
-  &#34;path&#34;: &#34;/project&#34;,
-  &#34;output_mode&#34;: &#34;content&#34;
-}</pre></div><button class="expand-btn">Show more</button></div></div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>/project/math_utils.py:6:def subtract(a: int, b: int) -&gt; int:</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
+<div class="tool-use" data-tool-id="toolu_grep_001"><div class="tool-header"><span class="tool-icon">⚙</span> Grep</div><div class="truncatable"><div class="truncatable-content"><div class="tool-input-rendered">{
+  <span class="json-key">"pattern"</span>: <span class="json-string-value">def subtract</span>,
+  <span class="json-key">"path"</span>: <span class="json-string-value">/project</span>,
+  <span class="json-key">"output_mode"</span>: <span class="json-string-value">content</span>
+}</div></div><button class="expand-btn">Show more</button></div></div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>/project/math_utils.py:6:def subtract(a: int, b: int) -&gt; int:</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
 <div class="message user" id="msg-2025-12-24T10-02-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-02-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:02:00.000Z" data-timestamp="2025-12-24T10:02:00.000Z">2025-12-24T10:02:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>Run the tests again</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-02-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-02-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:02:05.000Z" data-timestamp="2025-12-24T10:02:05.000Z">2025-12-24T10:02:05.000Z</time></a></div><div class="message-content">
 <div class="tool-pair">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_004">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-<div class="tool-description">Run tests with verbose output</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/ -v</pre></div><button class="expand-btn">Show more</button></div>
+<div class="tool-description"><p>Run tests with verbose output</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/ -v</pre></div><button class="expand-btn">Show more</button></div>
 </div><div class="tool-result tool-error"><div class="truncatable"><div class="truncatable-content"><pre>Exit code 1
 ===== FAILURES =====
 test_subtract - AssertionError: expected 5 but got None</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
@@ -312,7 +324,7 @@ test_subtract - AssertionError: expected 5 but got None</pre></div><button class
 <div class="tool-pair">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_005">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-<div class="tool-description">Commit the fix</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add subtract function and fix tests&#39;</pre></div><button class="expand-btn">Show more</button></div>
+<div class="tool-description"><p>Commit the fix</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add subtract function and fix tests&#39;</pre></div><button class="expand-btn">Show more</button></div>
 </div><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><div class="commit-card"><a href="https://github.com/example/project/commit/def5678"><span class="commit-card-hash">def5678</span> Add subtract function and fix tests</a></div><pre>2 files changed, 10 insertions(+), 1 deletion(-)</pre></div><button class="expand-btn">Show more</button></div></div></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-03-25-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-03-25-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:25.000Z" data-timestamp="2025-12-24T10:03:25.000Z">2025-12-24T10:03:25.000Z</time></a></div><div class="message-content">
 <div class="assistant-text"><p>Done! The subtract function is now working and committed.</p></div></div></div><details class="continuation"><summary>Session continuation summary</summary>

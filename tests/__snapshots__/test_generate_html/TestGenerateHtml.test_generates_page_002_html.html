@@ -38,6 +38,18 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.tool-description p { margin: 0; }
+.tool-input-rendered { font-family: monospace; white-space: pre-wrap; font-size: 0.85rem; line-height: 1.5; }
+.json-key { color: #0d47a1; }
+.json-string-value { color: #1b5e20; }
+.json-string-value p { display: inline; margin: 0; }
+.json-string-value code { background: rgba(0,0,0,0.08); padding: 1px 4px; border-radius: 3px; }
+.json-string-value strong { font-weight: 600; }
+.json-string-value em { font-style: italic; }
+.json-string-value a { color: #1976d2; text-decoration: underline; }
+.json-number { color: #e65100; }
+.json-bool { color: #7b1fa2; }
+.json-null { color: #78909c; }
 .tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .tool-result.tool-error { background: var(--tool-error-bg); }
 .tool-pair { border: 1px solid var(--tool-border); border-radius: 8px; padding: 8px; margin: 12px 0; background: rgba(156, 39, 176, 0.06); }

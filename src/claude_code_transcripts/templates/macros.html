@@ -90,24 +90,24 @@
 </div>
 {%- endmacro %}
 
-{# Bash tool #}
-{% macro bash_tool(command, description, tool_id) %}
+{# Bash tool - description_html is pre-rendered markdown so needs |safe #}
+{% macro bash_tool(command, description_html, tool_id) %}
 <div class="tool-use bash-tool" data-tool-id="{{ tool_id }}">
 <div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-{%- if description %}
-<div class="tool-description">{{ description }}</div>
+{%- if description_html %}
+<div class="tool-description">{{ description_html|safe }}</div>
 {%- endif -%}
 <div class="truncatable"><div class="truncatable-content"><pre class="bash-command">{{ command }}</pre></div><button class="expand-btn">Show more</button></div>
 </div>
 {%- endmacro %}
 
-{# Generic tool use - input_json is pre-formatted so needs |safe #}
-{% macro tool_use(tool_name, description, input_json, tool_id) %}
+{# Generic tool use - description_html and input_html are pre-rendered so need |safe #}
+{% macro tool_use(tool_name, description_html, input_html, tool_id) %}
 <div class="tool-use" data-tool-id="{{ tool_id }}"><div class="tool-header"><span class="tool-icon">⚙</span> {{ tool_name }}</div>
-{%- if description -%}
-<div class="tool-description">{{ description }}</div>
+{%- if description_html -%}
+<div class="tool-description">{{ description_html|safe }}</div>
 {%- endif -%}
-<div class="truncatable"><div class="truncatable-content"><pre class="json">{{ input_json }}</pre></div><button class="expand-btn">Show more</button></div></div>
+<div class="truncatable"><div class="truncatable-content"><div class="tool-input-rendered">{{ input_html|safe }}</div></div><button class="expand-btn">Show more</button></div></div>
 {%- endmacro %}
 
 {# Tool result - content_html is pre-rendered so needs |safe #}
