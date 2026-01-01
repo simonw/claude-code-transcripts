@@ -1433,7 +1433,8 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .thinking p { margin: 8px 0; }
 .assistant-text { margin: 8px 0; }
 .cell { margin: var(--spacing-sm) 0; border-radius: var(--border-radius-md); overflow: visible; }
-.cell summary { cursor: pointer; padding: var(--spacing-sm) var(--spacing-md); display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: var(--font-size-sm); list-style: none; position: sticky; top: var(--sticky-level-0); z-index: 20; background: inherit; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.cell summary { cursor: pointer; padding: var(--spacing-sm) var(--spacing-md); display: flex; align-items: center; font-weight: 600; font-size: var(--font-size-sm); list-style: none; position: sticky; top: var(--sticky-level-0); z-index: 20; background: inherit; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); gap: var(--spacing-sm); }
+.cell summary .cell-label { flex: 1; }
 .cell summary::-webkit-details-marker { display: none; }
 .cell summary::before { content: '▶'; font-size: var(--font-size-xs); margin-right: var(--spacing-sm); transition: transform var(--transition-fast); }
 .cell[open] summary::before { transform: rotate(90deg); }
@@ -1458,7 +1459,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .cell-copy-btn:focus { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .cell-copy-btn.copied { background: var(--accent-green-bg); color: var(--accent-green); border-color: var(--accent-green); }
 .tool-use { background: var(--tool-bg); border: 1px solid var(--tool-border); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
-.tool-header { font-weight: 600; color: var(--accent-purple); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); position: sticky; top: calc(var(--sticky-level-0) + var(--sticky-level-1)); z-index: 10; background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); padding: var(--spacing-xs) 0; }
+.tool-header { font-weight: 600; color: var(--accent-purple); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); position: sticky; top: calc(var(--sticky-level-0) + var(--sticky-level-1)); z-index: 10; background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); padding: var(--spacing-xs) 0; flex-wrap: wrap; }
 .tool-icon { font-size: var(--font-size-lg); }
 .tool-description { font-size: var(--font-size-sm); color: var(--text-muted); margin-bottom: var(--spacing-sm); font-style: italic; }
 .tool-description p { margin: 0; }
@@ -1495,7 +1496,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .file-tool { border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
 .write-tool { background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%); border: 1px solid var(--accent-green); }
 .edit-tool { background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(239, 68, 68, 0.05) 100%); border: 1px solid var(--accent-orange); }
-.file-tool-header { font-weight: 600; margin-bottom: var(--spacing-xs); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); }
+.file-tool-header { font-weight: 600; margin-bottom: var(--spacing-xs); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); flex-wrap: wrap; }
 .write-header { color: var(--accent-green); }
 .edit-header { color: var(--accent-orange); }
 .file-tool-icon { font-size: var(--font-size-base); }
@@ -1515,7 +1516,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .write-tool .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, rgba(16, 185, 129, 0.08)); }
 .edit-tool .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, rgba(245, 158, 11, 0.08)); }
 .todo-list { background: linear-gradient(135deg, var(--accent-green-bg) 0%, rgba(16, 185, 129, 0.04) 100%); border: 1px solid var(--accent-green); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
-.todo-header { font-weight: 600; color: var(--accent-green); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); }
+.todo-header { font-weight: 600; color: var(--accent-green); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); flex-wrap: wrap; }
 .todo-items { list-style: none; margin: 0; padding: 0; }
 .todo-item { display: flex; align-items: flex-start; gap: var(--spacing-sm); padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border-light); font-size: var(--font-size-sm); }
 .todo-item:last-child { border-bottom: none; }

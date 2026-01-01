@@ -116,7 +116,8 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .thinking p { margin: 8px 0; }
 .assistant-text { margin: 8px 0; }
 .cell { margin: var(--spacing-sm) 0; border-radius: var(--border-radius-md); overflow: visible; }
-.cell summary { cursor: pointer; padding: var(--spacing-sm) var(--spacing-md); display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: var(--font-size-sm); list-style: none; position: sticky; top: var(--sticky-level-0); z-index: 20; background: inherit; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); }
+.cell summary { cursor: pointer; padding: var(--spacing-sm) var(--spacing-md); display: flex; align-items: center; font-weight: 600; font-size: var(--font-size-sm); list-style: none; position: sticky; top: var(--sticky-level-0); z-index: 20; background: inherit; backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); gap: var(--spacing-sm); }
+.cell summary .cell-label { flex: 1; }
 .cell summary::-webkit-details-marker { display: none; }
 .cell summary::before { content: '▶'; font-size: var(--font-size-xs); margin-right: var(--spacing-sm); transition: transform var(--transition-fast); }
 .cell[open] summary::before { transform: rotate(90deg); }
@@ -141,7 +142,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .cell-copy-btn:focus { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
 .cell-copy-btn.copied { background: var(--accent-green-bg); color: var(--accent-green); border-color: var(--accent-green); }
 .tool-use { background: var(--tool-bg); border: 1px solid var(--tool-border); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
-.tool-header { font-weight: 600; color: var(--accent-purple); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); position: sticky; top: calc(var(--sticky-level-0) + var(--sticky-level-1)); z-index: 10; background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); padding: var(--spacing-xs) 0; }
+.tool-header { font-weight: 600; color: var(--accent-purple); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); position: sticky; top: calc(var(--sticky-level-0) + var(--sticky-level-1)); z-index: 10; background: var(--glass-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur); padding: var(--spacing-xs) 0; flex-wrap: wrap; }
 .tool-icon { font-size: var(--font-size-lg); }
 .tool-description { font-size: var(--font-size-sm); color: var(--text-muted); margin-bottom: var(--spacing-sm); font-style: italic; }
 .tool-description p { margin: 0; }
@@ -178,7 +179,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .file-tool { border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
 .write-tool { background: linear-gradient(135deg, rgba(14, 165, 233, 0.08) 0%, rgba(16, 185, 129, 0.08) 100%); border: 1px solid var(--accent-green); }
 .edit-tool { background: linear-gradient(135deg, rgba(245, 158, 11, 0.08) 0%, rgba(239, 68, 68, 0.05) 100%); border: 1px solid var(--accent-orange); }
-.file-tool-header { font-weight: 600; margin-bottom: var(--spacing-xs); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); }
+.file-tool-header { font-weight: 600; margin-bottom: var(--spacing-xs); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); flex-wrap: wrap; }
 .write-header { color: var(--accent-green); }
 .edit-header { color: var(--accent-orange); }
 .file-tool-icon { font-size: var(--font-size-base); }
@@ -198,7 +199,7 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .write-tool .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, rgba(16, 185, 129, 0.08)); }
 .edit-tool .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, rgba(245, 158, 11, 0.08)); }
 .todo-list { background: linear-gradient(135deg, var(--accent-green-bg) 0%, rgba(16, 185, 129, 0.04) 100%); border: 1px solid var(--accent-green); border-radius: var(--border-radius-md); padding: var(--spacing-md); margin: var(--spacing-md) 0; }
-.todo-header { font-weight: 600; color: var(--accent-green); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); }
+.todo-header { font-weight: 600; color: var(--accent-green); margin-bottom: var(--spacing-sm); display: flex; align-items: center; gap: var(--spacing-sm); font-size: var(--font-size-sm); flex-wrap: wrap; }
 .todo-items { list-style: none; margin: 0; padding: 0; }
 .todo-item { display: flex; align-items: flex-start; gap: var(--spacing-sm); padding: var(--spacing-sm) 0; border-bottom: 1px solid var(--border-light); font-size: var(--font-size-sm); }
 .todo-item:last-child { border-bottom: none; }
@@ -396,7 +397,7 @@ File written successfully">Copy</button>
     <span class="k">return</span> <span class="n">a</span> <span class="o">+</span> <span class="n">b</span>
 </pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;file_path&quot;: &quot;/project/math_utils.py&quot;,
   &quot;content&quot;: &quot;def add(a: int, b: int) -&gt; int:\n    \&quot;\&quot;\&quot;Add two numbers together.\&quot;\&quot;\&quot;\n    return a + b\n&quot;
@@ -449,7 +450,7 @@ tests/test_math.py ..  [100%]
 <div class="view-markdown">
 <div class="tool-description"><p>Run pytest on tests directory</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/</pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;command&quot;: &quot;python -m pytest tests/&quot;,
   &quot;description&quot;: &quot;Run pytest on tests directory&quot;
@@ -530,7 +531,7 @@ Todos updated">Copy</button>
 <div class="view-markdown">
 <ul class="todo-items"><li class="todo-item todo-completed"><span class="todo-icon">✓</span><span class="todo-content">Create add function</span></li><li class="todo-item todo-completed"><span class="todo-icon">✓</span><span class="todo-content">Write tests</span></li><li class="todo-item todo-completed"><span class="todo-icon">✓</span><span class="todo-content">Run tests</span></li><li class="todo-item todo-in-progress"><span class="todo-icon">→</span><span class="todo-content">Commit changes</span></li><li class="todo-item todo-pending"><span class="todo-icon">○</span><span class="todo-content">Push to remote</span></li></ul>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;todos&quot;: [
     {
@@ -595,7 +596,7 @@ Result:
 <div class="view-markdown">
 <div class="tool-description"><p>Commit changes</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add math_utils with add function&#39;</pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;command&quot;: &quot;git add . &amp;&amp; git commit -m &#x27;Add math_utils with add function&#x27;&quot;,
   &quot;description&quot;: &quot;Commit changes&quot;
@@ -649,7 +650,7 @@ To github.com:example/project.git
 <div class="view-markdown">
 <div class="tool-description"><p>Push to remote</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git push -u origin main</pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;command&quot;: &quot;git push -u origin main&quot;,
   &quot;description&quot;: &quot;Push to remote&quot;
@@ -750,7 +751,7 @@ File edited successfully">Copy</button>
 </pre></div>
 </div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;file_path&quot;: &quot;/project/math_utils.py&quot;,
   &quot;old_string&quot;: &quot;    return a + b\n&quot;,
@@ -842,7 +843,7 @@ test_subtract - AssertionError: expected 5 but got None">Copy</button>
 <div class="view-markdown">
 <div class="tool-description"><p>Run tests with verbose output</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">python -m pytest tests/ -v</pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;command&quot;: &quot;python -m pytest tests/ -v&quot;,
   &quot;description&quot;: &quot;Run tests with verbose output&quot;
@@ -928,7 +929,7 @@ File edited successfully">Copy</button>
 </pre></div>
 </div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;file_path&quot;: &quot;/project/tests/test_math.py&quot;,
   &quot;old_string&quot;: &quot;assert subtract(10, 5) == None&quot;,
@@ -970,7 +971,7 @@ Result:
 <div class="view-markdown">
 <div class="tool-description"><p>Commit the fix</p></div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add subtract function and fix tests&#39;</pre></div><button class="expand-btn">Show more</button></div>
 </div>
-<div class="view-json" style="display: none;">
+<div class="view-json">
 <pre class="json">{
   &quot;command&quot;: &quot;git add . &amp;&amp; git commit -m &#x27;Add subtract function and fix tests&#x27;&quot;,
   &quot;description&quot;: &quot;Commit the fix&quot;
