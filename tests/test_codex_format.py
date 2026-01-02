@@ -51,6 +51,27 @@ class TestCodexCliFormatDetection:
         finally:
             temp_file.unlink()
 
+    def test_detects_codex_format_from_message_record(self):
+        """Test that Codex format is detected from message/record_type records."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write(
+                '{"id":"test-id","timestamp":"2025-08-31T20:48:31.616Z","instructions":null}\n'
+            )
+            f.write('{"record_type":"state"}\n')
+            f.write(
+                '{"type":"message","id":null,"role":"user","content":[{"type":"input_text","text":"Hello old format"}]}\n'
+            )
+            temp_file = Path(f.name)
+
+        try:
+            data = parse_session_file(temp_file)
+            loglines = data["loglines"]
+            assert len(loglines) == 1
+            assert loglines[0]["type"] == "user"
+            assert loglines[0]["message"]["content"] == "Hello old format"
+        finally:
+            temp_file.unlink()
+
 
 class TestCodexCliMessageParsing:
     """Tests for parsing Codex CLI messages."""
@@ -157,6 +178,38 @@ class TestCodexCliToolCalls:
             assert tool_use["name"] == "Bash"  # shell_command -> Bash
             assert "input" in tool_use
             assert tool_use["input"]["command"] == "ls -la"
+        finally:
+            temp_file.unlink()
+
+    def test_parses_function_call_output_old_format(self):
+        """Test that Codex function_call_output converts to tool_result."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
+            f.write(
+                '{"id":"test-id","timestamp":"2025-08-31T20:48:31.616Z","instructions":null}\n'
+            )
+            f.write('{"record_type":"state"}\n')
+            f.write(
+                '{"type":"function_call","id":"fc_123","name":"shell_command","arguments":"{\\"command\\":\\"ls -la\\"}","call_id":"call_123"}\n'
+            )
+            f.write(
+                '{"type":"function_call_output","call_id":"call_123","output":"OK"}\n'
+            )
+            temp_file = Path(f.name)
+
+        try:
+            data = parse_session_file(temp_file)
+            loglines = data["loglines"]
+            assert len(loglines) == 2
+
+            tool_use = loglines[0]["message"]["content"][0]
+            assert tool_use["type"] == "tool_use"
+            assert tool_use["name"] == "Bash"
+            assert tool_use["id"] == "call_123"
+
+            tool_result = loglines[1]["message"]["content"][0]
+            assert tool_result["type"] == "tool_result"
+            assert tool_result["tool_use_id"] == "call_123"
+            assert tool_result["content"] == "OK"
         finally:
             temp_file.unlink()
 

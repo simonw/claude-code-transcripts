@@ -171,6 +171,21 @@ def _get_jsonl_summary(filepath, max_length=200):
                                             if len(text) > max_length:
                                                 return text[: max_length - 3] + "..."
                                             return text
+                    # Codex CLI old format: {"type": "message", "role": "user", "content": [...]}
+                    elif (
+                        obj.get("type") == "message"
+                        and obj.get("role") == "user"
+                        and obj.get("content")
+                    ):
+                        content_blocks = obj.get("content", [])
+                        if isinstance(content_blocks, list):
+                            for block in content_blocks:
+                                if block.get("type") in ("input_text", "text"):
+                                    text = block.get("text", "")
+                                    if text and not text.startswith("<"):
+                                        if len(text) > max_length:
+                                            return text[: max_length - 3] + "..."
+                                        return text
                 except json.JSONDecodeError:
                     continue
     except Exception:
