@@ -464,8 +464,241 @@ def parse_session_file(filepath):
             return json.load(f)
 
 
+def _is_codex_cli_format(filepath):
+    """Detect if a JSONL file is in Codex CLI format.
+
+    Checks the first few lines for Codex CLI markers like session_meta or response_item.
+    """
+    try:
+        saw_claude_message = False
+        with open(filepath, "r", encoding="utf-8") as f:
+            for idx, line in enumerate(f):
+                if idx >= 25:  # Check the first 25 lines
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    entry_type = obj.get("type")
+                    # Codex CLI markers (new and old formats)
+                    if entry_type in (
+                        "session_meta",
+                        "response_item",
+                        "turn_context",
+                        "event_msg",
+                    ):
+                        return True
+                    if "record_type" in obj:
+                        return True
+                    if entry_type == "message" and obj.get("role") in (
+                        "user",
+                        "assistant",
+                    ):
+                        return True
+                    if entry_type in (
+                        "function_call",
+                        "function_call_output",
+                        "reasoning",
+                    ):
+                        return True
+                    # Claude Code has "type" as user/assistant
+                    if entry_type in ("user", "assistant"):
+                        saw_claude_message = True
+                except json.JSONDecodeError:
+                    continue
+        if saw_claude_message:
+            return False
+    except Exception:
+        pass
+    return False
+
+
+def _map_codex_tool_to_claude(tool_name):
+    """Map Codex CLI tool names to Claude Code tool names."""
+    mapping = {
+        "shell_command": "Bash",
+        "read_file": "Read",
+        "write_file": "Write",
+        "edit_file": "Edit",
+        "search_files": "Grep",
+        "list_files": "Glob",
+    }
+    return mapping.get(tool_name, tool_name)
+
+
+def _convert_codex_content_to_claude(content_blocks):
+    """Convert Codex CLI content blocks to Claude Code format.
+
+    Args:
+        content_blocks: List of Codex content blocks like [{"type": "input_text", "text": "..."}]
+
+    Returns:
+        Either a string (for simple text) or list of Claude Code content blocks
+    """
+    if not content_blocks:
+        return []
+
+    # If there's only one input_text block, return as simple string
+    if len(content_blocks) == 1 and content_blocks[0].get("type") == "input_text":
+        return content_blocks[0].get("text", "")
+
+    # Otherwise convert to Claude Code format
+    claude_blocks = []
+    for block in content_blocks:
+        block_type = block.get("type")
+        if block_type == "input_text":
+            claude_blocks.append({"type": "text", "text": block.get("text", "")})
+        elif block_type == "output_text":
+            claude_blocks.append({"type": "text", "text": block.get("text", "")})
+        elif block_type == "text":
+            # Already in Claude format
+            claude_blocks.append(block)
+        else:
+            # Pass through other types
+            claude_blocks.append(block)
+
+    return claude_blocks
+
+
+def _parse_codex_jsonl_file(filepath):
+    """Parse Codex CLI JSONL file and convert to Claude Code format."""
+    loglines = []
+
+    def add_message(role, content, timestamp):
+        if role not in ("user", "assistant"):
+            return
+        converted_content = _convert_codex_content_to_claude(content)
+        loglines.append(
+            {
+                "type": role,
+                "timestamp": timestamp,
+                "message": {"role": role, "content": converted_content},
+            }
+        )
+
+    def add_tool_use(tool_name, arguments, call_id, timestamp):
+        if isinstance(arguments, str):
+            try:
+                tool_input = json.loads(arguments)
+            except json.JSONDecodeError:
+                tool_input = {}
+        elif isinstance(arguments, dict):
+            tool_input = arguments
+        else:
+            tool_input = {}
+
+        claude_tool_name = _map_codex_tool_to_claude(tool_name)
+        loglines.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": call_id,
+                            "name": claude_tool_name,
+                            "input": tool_input,
+                        }
+                    ],
+                },
+            }
+        )
+
+    def add_tool_result(call_id, output, timestamp, is_error=False):
+        loglines.append(
+            {
+                "type": "user",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": call_id,
+                            "content": output,
+                            "is_error": is_error,
+                        }
+                    ],
+                },
+            }
+        )
+
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                record_type = obj.get("type")
+                timestamp = obj.get("timestamp", "")
+
+                if record_type == "response_item":
+                    payload = obj.get("payload", {})
+                    payload_type = payload.get("type")
+
+                    if payload_type == "message":
+                        add_message(
+                            payload.get("role"),
+                            payload.get("content", []),
+                            timestamp,
+                        )
+                    elif payload_type == "function_call":
+                        add_tool_use(
+                            payload.get("name", ""),
+                            payload.get("arguments", "{}"),
+                            payload.get("call_id", ""),
+                            timestamp,
+                        )
+                    elif payload_type == "function_call_output":
+                        add_tool_result(
+                            payload.get("call_id", ""),
+                            payload.get("output", ""),
+                            timestamp,
+                            bool(payload.get("is_error")),
+                        )
+                elif record_type == "message":
+                    add_message(
+                        obj.get("role"),
+                        obj.get("content", []),
+                        timestamp,
+                    )
+                elif record_type == "function_call":
+                    call_id = obj.get("call_id") or obj.get("id", "")
+                    add_tool_use(
+                        obj.get("name", ""),
+                        obj.get("arguments", "{}"),
+                        call_id,
+                        timestamp,
+                    )
+                elif record_type == "function_call_output":
+                    call_id = obj.get("call_id") or obj.get("id", "")
+                    add_tool_result(
+                        call_id,
+                        obj.get("output", ""),
+                        timestamp,
+                        bool(obj.get("is_error")),
+                    )
+
+            except json.JSONDecodeError:
+                continue
+
+    return {"loglines": loglines}
+
+
 def _parse_jsonl_file(filepath):
-    """Parse JSONL file and convert to standard format."""
+    """Parse JSONL file and convert to standard format.
+
+    Automatically detects and handles both Claude Code and Codex CLI formats.
+    """
+    # Detect format
+    if _is_codex_cli_format(filepath):
+        return _parse_codex_jsonl_file(filepath)
+
+    # Original Claude Code format parsing
     loglines = []
 
     with open(filepath, "r", encoding="utf-8") as f:

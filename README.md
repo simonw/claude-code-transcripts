@@ -5,7 +5,7 @@
 [![Tests](https://github.com/simonw/claude-code-transcripts/workflows/Test/badge.svg)](https://github.com/simonw/claude-code-transcripts/actions?query=workflow%3ATest)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/simonw/claude-code-transcripts/blob/main/LICENSE)
 
-Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
+Convert Claude Code and Codex CLI session files (JSON or JSONL) to clean, mobile-friendly HTML pages with pagination.
 
 [Example transcript](https://static.simonwillison.net/static/2025/claude-code-microjs/index.html) produced using this tool.
 
@@ -24,7 +24,11 @@ uvx claude-code-transcripts --help
 
 ## Usage
 
-This tool converts Claude Code session files into browseable multi-page HTML transcripts.
+This tool converts Claude Code and Codex CLI session files into browseable multi-page HTML transcripts.
+
+**Supported formats:**
+- Claude Code session files (JSONL format from `~/.claude/projects`)
+- Codex CLI session files (JSONL format) - automatically detected and converted
 
 There are four commands available:
 
