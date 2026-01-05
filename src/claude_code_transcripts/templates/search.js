@@ -18,8 +18,9 @@
     // Show search box (progressive enhancement)
     searchBox.style.display = 'flex';
 
-    // Gist preview support - detect if we're on gistpreview.github.io
-    var isGistPreview = window.location.hostname === 'gistpreview.github.io';
+    // Gist preview support - detect if we're on gisthost.github.io or gistpreview.github.io
+    var hostname = window.location.hostname;
+    var isGistPreview = hostname === 'gisthost.github.io' || hostname === 'gistpreview.github.io';
     var gistId = null;
     var gistOwner = null;
     var gistInfoLoaded = false;

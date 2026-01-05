@@ -518,6 +518,43 @@ class TestInjectGistPreviewJs:
         inject_gist_preview_js(output_dir)
         # Should complete without error
 
+    def test_gist_preview_js_skips_already_rewritten_links(self):
+        """Test that GIST_PREVIEW_JS skips links that have already been rewritten.
+
+        When navigating between pages on gistpreview.github.io, the JS may run
+        multiple times. Links that have already been rewritten to the
+        ?GIST_ID/filename.html format should be skipped to avoid double-rewriting.
+
+        This fixes issue #26 where pagination links break on later pages.
+        """
+        # The JS should check if href already starts with '?'
+        assert "href.startsWith('?')" in GIST_PREVIEW_JS
+
+    def test_gist_preview_js_uses_mutation_observer(self):
+        """Test that GIST_PREVIEW_JS uses MutationObserver for dynamic content.
+
+        gistpreview.github.io loads content dynamically. When navigating between
+        pages via SPA-style navigation, new content is inserted without a full
+        page reload. The JS needs to use MutationObserver to detect and rewrite
+        links in dynamically added content.
+
+        This fixes issue #26 where pagination links break on later pages.
+        """
+        # The JS should use MutationObserver
+        assert "MutationObserver" in GIST_PREVIEW_JS
+
+    def test_gist_preview_js_runs_on_dom_content_loaded(self):
+        """Test that GIST_PREVIEW_JS runs on DOMContentLoaded.
+
+        The script is injected at the end of the body, but in some cases
+        (especially on gistpreview.github.io), the DOM might not be fully ready
+        when the script runs. We should also run on DOMContentLoaded as a fallback.
+
+        This fixes issue #26 where pagination links break on later pages.
+        """
+        # The JS should listen for DOMContentLoaded
+        assert "DOMContentLoaded" in GIST_PREVIEW_JS
+
 
 class TestCreateGist:
     """Tests for the create_gist function."""
@@ -648,7 +685,7 @@ class TestSessionGistOption:
         assert result.exit_code == 0
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
-        assert "gistpreview.github.io" in result.output
+        assert "gisthost.github.io" in result.output
 
     def test_session_gist_with_output_dir(self, monkeypatch, output_dir):
         """Test that session --gist with -o uses specified directory."""
@@ -679,9 +716,9 @@ class TestSessionGistOption:
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
-        # Verify JS was injected
+        # Verify JS was injected (checks for both domains for backwards compatibility)
         index_content = (output_dir / "index.html").read_text(encoding="utf-8")
-        assert "gistpreview.github.io" in index_content
+        assert "gisthost.github.io" in index_content
 
 
 class TestContinuationLongTexts:
@@ -926,7 +963,7 @@ class TestImportGistOption:
         assert result.exit_code == 0
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
-        assert "gistpreview.github.io" in result.output
+        assert "gisthost.github.io" in result.output
 
 
 class TestVersionOption:

@@ -104,11 +104,11 @@ claude-code-transcripts json session.json --gist
 This will output something like:
 ```
 Gist: https://gist.github.com/username/abc123def456
-Preview: https://gistpreview.github.io/?abc123def456/index.html
+Preview: https://gisthost.github.io/?abc123def456/index.html
 Files: /var/folders/.../session-id
 ```
 
-The preview URL uses [gistpreview.github.io](https://gistpreview.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gistpreview.
+The preview URL uses [gisthost.github.io](https://gisthost.github.io/) to render your HTML gist. The tool automatically injects JavaScript to fix relative links when served through gisthost.
 
 **Large sessions:** GitHub's gist API has size limits (~1MB). For large sessions, the tool automatically handles this:
 
@@ -198,8 +198,9 @@ claude-code-transcripts json session.jsonl --open
 # Fetch and convert from a URL
 claude-code-transcripts json https://example.com/session.jsonl --open
 ```
+This works with both JSONL files in the `~/.claude/projects/` folder and JSON session files extracted from Claude Code for web.
 
-When using [Claude Code for web](https://claude.ai/code) you can export your session as a `session.json` file using the `teleport` command.
+The `json` command can take a URL to a JSON or JSONL file as an alternative to a path on disk.
 
 ### Converting all sessions
 
