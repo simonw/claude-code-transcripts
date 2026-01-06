@@ -542,8 +542,12 @@ class TestRenderContentBlock:
         finally:
             claude_code_transcripts._github_repo = old_repo
 
-    def test_tool_result_with_ansi_codes(self, snapshot_html):
-        """Test that ANSI escape codes are stripped from tool results."""
+    def test_tool_result_with_ansi_codes_snapshot(self, snapshot_html):
+        """Test ANSI escape code stripping with snapshot comparison.
+
+        This is a snapshot test companion to test_tool_result_with_ansi_codes
+        that verifies the complete HTML output structure.
+        """
         block = {
             "type": "tool_result",
             "content": "\x1b[38;2;166;172;186mTests passed:\x1b[0m \x1b[32m✓\x1b[0m All 5 tests passed\n\x1b[1;31mError:\x1b[0m None",
