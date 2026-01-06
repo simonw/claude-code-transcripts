@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 import webbrowser
 from datetime import datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ import httpx
 from jinja2 import Environment, PackageLoader
 import markdown
 import questionary
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
 
 # Set up Jinja2 environment
 _jinja_env = Environment(
@@ -503,6 +506,55 @@ class CredentialsError(Exception):
     """Raised when credentials cannot be obtained."""
 
     pass
+
+
+class TranscriptWatcher(FileSystemEventHandler):
+    """File system event handler for watching transcript source directory."""
+
+    def __init__(self, output_dir, debounce_seconds, quiet=False):
+        super().__init__()
+        self.output_dir = output_dir
+        self.debounce_seconds = debounce_seconds
+        self.quiet = quiet
+        self.last_trigger_time = 0
+        self.pending_update = False
+        self.generation_callback = None
+
+    def should_process_event(self, event):
+        """Check if we should process this file system event."""
+        if event.is_directory:
+            return False
+
+        event_path = Path(event.src_path)
+        try:
+            if self.output_dir in event_path.parents or event_path == self.output_dir:
+                return False
+        except (ValueError, AttributeError):
+            pass
+
+        ignore_patterns = ['.tmp', '.swp', '~', '.DS_Store', '__pycache__']
+        if any(pattern in event_path.name for pattern in ignore_patterns):
+            return False
+
+        return True
+
+    def on_any_event(self, event):
+        """Handle file system events."""
+        if not self.should_process_event(event):
+            return
+        self.pending_update = True
+        self.last_trigger_time = time.time()
+
+    def check_and_update(self):
+        """Check if enough time has passed and trigger regeneration if needed."""
+        if not self.pending_update:
+            return
+
+        time_since_last_trigger = time.time() - self.last_trigger_time
+        if time_since_last_trigger >= self.debounce_seconds:
+            self.pending_update = False
+            if self.generation_callback:
+                self.generation_callback()
 
 
 def get_access_token_from_keychain():
@@ -2030,7 +2082,18 @@ def web_cmd(
     is_flag=True,
     help="Suppress all output except errors.",
 )
-def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
+@click.option(
+    "--watch",
+    is_flag=True,
+    help="Watch for changes and regenerate automatically.",
+)
+@click.option(
+    "--debounce",
+    type=int,
+    default=5,
+    help="Seconds to wait after last change before regenerating (default: 5).",
+)
+def all_cmd(source, output, include_agents, dry_run, open_browser, quiet, watch, debounce):
     """Convert all local Claude Code sessions to a browsable HTML archive.
 
     Creates a directory structure with:
@@ -2049,6 +2112,55 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
 
     output = Path(output)
 
+    if watch:
+        _run_watch_mode(source, output, include_agents, open_browser, quiet, debounce)
+    else:
+        _run_all_generation(source, output, include_agents, dry_run, open_browser, quiet)
+
+
+def _run_watch_mode(source, output, include_agents, open_browser, quiet, debounce):
+    """Watch source directory and regenerate transcripts on changes."""
+
+    def run_generation():
+        start_time = time.time()
+        if not quiet:
+            click.echo(f"\nRegenerating transcripts...")
+
+        _run_all_generation(source, output, include_agents, False, False, quiet)
+
+        duration = time.time() - start_time
+        if not quiet:
+            click.echo(f"Regenerated archive ({duration:.1f}s)")
+
+    # Initial generation
+    run_generation()
+
+    if open_browser:
+        index_url = (output / "index.html").resolve().as_uri()
+        webbrowser.open(index_url)
+
+    if not quiet:
+        click.echo(f"\nWatching {source} for changes...")
+        click.echo("Press Ctrl+C to stop.")
+
+    observer = Observer()
+    handler = TranscriptWatcher(output, debounce, quiet)
+    handler.generation_callback = run_generation
+    observer.schedule(handler, str(source), recursive=True)
+    observer.start()
+
+    try:
+        while True:
+            time.sleep(1)
+            handler.check_and_update()
+    except KeyboardInterrupt:
+        observer.stop()
+
+    observer.join()
+
+
+def _run_all_generation(source, output, include_agents, dry_run, open_browser, quiet):
+    """Run the all-sessions generation logic."""
     if not quiet:
         click.echo(f"Scanning {source}...")
 
