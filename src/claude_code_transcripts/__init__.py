@@ -305,6 +305,7 @@ def set_github_repo(repo: str | None) -> contextvars.Token[str | None]:
     _github_repo = repo
     return _github_repo_var.set(repo)
 
+
 # API constants
 API_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -1800,6 +1801,33 @@ details.continuation[open] summary { border-radius: var(--border-radius-lg) var(
 """
 
 JS = """
+// Clipboard helper with fallback for older browsers
+function copyToClipboard(text) {
+    // Modern browsers: use Clipboard API
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        return navigator.clipboard.writeText(text);
+    }
+    // Fallback: use execCommand('copy')
+    return new Promise(function(resolve, reject) {
+        var textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '0';
+        textarea.setAttribute('readonly', '');
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            var success = document.execCommand('copy');
+            document.body.removeChild(textarea);
+            if (success) { resolve(); }
+            else { reject(new Error('execCommand copy failed')); }
+        } catch (err) {
+            document.body.removeChild(textarea);
+            reject(err);
+        }
+    });
+}
 document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
     const timestamp = el.getAttribute('data-timestamp');
     const date = new Date(timestamp);
@@ -1844,7 +1872,7 @@ document.querySelectorAll('pre, .tool-result .truncatable-content, .bash-command
     copyBtn.addEventListener('click', function(e) {
         e.stopPropagation();
         const textToCopy = el.textContent.replace(/^Copy$/, '').trim();
-        navigator.clipboard.writeText(textToCopy).then(function() {
+        copyToClipboard(textToCopy).then(function() {
             copyBtn.textContent = 'Copied!';
             copyBtn.classList.add('copied');
             setTimeout(function() {
@@ -1853,6 +1881,8 @@ document.querySelectorAll('pre, .tool-result .truncatable-content, .bash-command
             }, 2000);
         }).catch(function(err) {
             console.error('Failed to copy:', err);
+            copyBtn.textContent = 'Failed';
+            setTimeout(function() { copyBtn.textContent = 'Copy'; }, 2000);
         });
     });
     el.appendChild(copyBtn);
@@ -1871,7 +1901,7 @@ document.querySelectorAll('.cell-copy-btn').forEach(function(btn) {
             const content = cell.querySelector('.cell-content');
             textToCopy = content.textContent.trim();
         }
-        navigator.clipboard.writeText(textToCopy).then(function() {
+        copyToClipboard(textToCopy).then(function() {
             btn.textContent = 'Copied!';
             btn.classList.add('copied');
             setTimeout(function() {
@@ -1880,6 +1910,8 @@ document.querySelectorAll('.cell-copy-btn').forEach(function(btn) {
             }, 2000);
         }).catch(function(err) {
             console.error('Failed to copy cell:', err);
+            btn.textContent = 'Failed';
+            setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
         });
     });
     // Keyboard accessibility
