@@ -2090,8 +2090,8 @@ def web_cmd(
 @click.option(
     "--debounce",
     type=int,
-    default=5,
-    help="Seconds to wait after last change before regenerating (default: 5).",
+    default=60,
+    help="Seconds to wait after last change before regenerating (default: 60).",
 )
 def all_cmd(source, output, include_agents, dry_run, open_browser, quiet, watch, debounce):
     """Convert all local Claude Code sessions to a browsable HTML archive.
