@@ -383,6 +383,106 @@ def generate_batch_html(
     }
 
 
+def generate_incremental_html(
+    source_folder,
+    output_dir,
+    changed_files,
+    include_agents=False,
+    progress_callback=None,
+):
+    """Incrementally regenerate HTML for only the changed session files.
+
+    Only regenerates the sessions corresponding to the changed files,
+    updates the affected project indexes, and updates the master index.
+
+    Args:
+        source_folder: Path to the Claude projects folder
+        output_dir: Path for output archive
+        changed_files: Set of Path objects for files that have changed
+        include_agents: Whether to include agent-* session files
+        progress_callback: Optional callback(project_name, session_name, current, total)
+
+    Returns statistics dict with sessions_regenerated, failed_sessions, projects_updated.
+    """
+    source_folder = Path(source_folder)
+    output_dir = Path(output_dir)
+
+    # Filter to only JSONL files that exist
+    jsonl_files = {f for f in changed_files if f.suffix == ".jsonl" and f.exists()}
+
+    # Skip agent files unless requested
+    if not include_agents:
+        jsonl_files = {f for f in jsonl_files if not f.name.startswith("agent-")}
+
+    # Track which projects need their index updated
+    affected_projects = set()
+    sessions_regenerated = 0
+    failed_sessions = []
+
+    total_count = len(jsonl_files)
+    processed_count = 0
+
+    for session_file in jsonl_files:
+        # Get summary and skip boring sessions
+        summary = get_session_summary(session_file)
+        if summary.lower() == "warmup" or summary == "(no summary)":
+            continue
+
+        # Determine project info
+        project_folder = session_file.parent
+        project_key = project_folder.name
+        project_name = get_project_display_name(project_key)
+
+        # Track this project as needing index update
+        affected_projects.add(project_key)
+
+        # Generate session HTML
+        session_name = session_file.stem
+        project_dir = output_dir / project_name
+        project_dir.mkdir(exist_ok=True)
+        session_dir = project_dir / session_name
+
+        try:
+            generate_html(session_file, session_dir)
+            sessions_regenerated += 1
+        except Exception as e:
+            failed_sessions.append(
+                {
+                    "project": project_name,
+                    "session": session_name,
+                    "error": str(e),
+                }
+            )
+
+        processed_count += 1
+        if progress_callback:
+            progress_callback(project_name, session_name, processed_count, total_count)
+
+    # Rebuild project indexes for affected projects only
+    # We need the full project data to generate the index
+    all_projects = find_all_sessions(source_folder, include_agents=include_agents)
+    projects_by_key = {}
+    for project in all_projects:
+        # Match by the original folder name
+        project_folder_name = project["path"].name
+        projects_by_key[project_folder_name] = project
+
+    for project_key in affected_projects:
+        if project_key in projects_by_key:
+            project = projects_by_key[project_key]
+            project_dir = output_dir / project["name"]
+            _generate_project_index(project, project_dir)
+
+    # Always regenerate master index (session counts might have changed)
+    _generate_master_index(all_projects, output_dir)
+
+    return {
+        "sessions_regenerated": sessions_regenerated,
+        "failed_sessions": failed_sessions,
+        "projects_updated": len(affected_projects),
+    }
+
+
 def _generate_project_index(project, output_dir):
     """Generate index.html for a single project."""
     template = get_template("project_index.html")
@@ -518,6 +618,7 @@ class TranscriptWatcher(FileSystemEventHandler):
         self.quiet = quiet
         self.last_trigger_time = 0
         self.pending_update = False
+        self.changed_files = set()
         self.generation_callback = None
 
     def should_process_event(self, event):
@@ -532,7 +633,7 @@ class TranscriptWatcher(FileSystemEventHandler):
         except (ValueError, AttributeError):
             pass
 
-        ignore_patterns = ['.tmp', '.swp', '~', '.DS_Store', '__pycache__']
+        ignore_patterns = [".tmp", ".swp", "~", ".DS_Store", "__pycache__"]
         if any(pattern in event_path.name for pattern in ignore_patterns):
             return False
 
@@ -543,6 +644,7 @@ class TranscriptWatcher(FileSystemEventHandler):
         if not self.should_process_event(event):
             return
         self.pending_update = True
+        self.changed_files.add(Path(event.src_path))
         self.last_trigger_time = time.time()
 
     def check_and_update(self):
@@ -553,8 +655,10 @@ class TranscriptWatcher(FileSystemEventHandler):
         time_since_last_trigger = time.time() - self.last_trigger_time
         if time_since_last_trigger >= self.debounce_seconds:
             self.pending_update = False
+            changed = self.changed_files.copy()
+            self.changed_files.clear()
             if self.generation_callback:
-                self.generation_callback()
+                self.generation_callback(changed)
 
 
 def get_access_token_from_keychain():
@@ -2093,7 +2197,9 @@ def web_cmd(
     default=60,
     help="Seconds to wait after last change before regenerating (default: 60).",
 )
-def all_cmd(source, output, include_agents, dry_run, open_browser, quiet, watch, debounce):
+def all_cmd(
+    source, output, include_agents, dry_run, open_browser, quiet, watch, debounce
+):
     """Convert all local Claude Code sessions to a browsable HTML archive.
 
     Creates a directory structure with:
@@ -2115,25 +2221,33 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet, watch,
     if watch:
         _run_watch_mode(source, output, include_agents, open_browser, quiet, debounce)
     else:
-        _run_all_generation(source, output, include_agents, dry_run, open_browser, quiet)
+        _run_all_generation(
+            source, output, include_agents, dry_run, open_browser, quiet
+        )
 
 
 def _run_watch_mode(source, output, include_agents, open_browser, quiet, debounce):
     """Watch source directory and regenerate transcripts on changes."""
 
-    def run_generation():
+    def run_incremental_generation(changed_files):
         start_time = time.time()
         if not quiet:
-            click.echo(f"\nRegenerating transcripts...")
+            click.echo(f"\nRegenerating {len(changed_files)} changed file(s)...")
 
-        _run_all_generation(source, output, include_agents, False, False, quiet)
+        stats = generate_incremental_html(
+            source, output, changed_files, include_agents=include_agents
+        )
 
         duration = time.time() - start_time
         if not quiet:
-            click.echo(f"Regenerated archive ({duration:.1f}s)")
+            click.echo(
+                f"Regenerated {stats['sessions_regenerated']} session(s) ({duration:.1f}s)"
+            )
 
-    # Initial generation
-    run_generation()
+    # Initial full generation
+    if not quiet:
+        click.echo(f"Generating initial archive...")
+    _run_all_generation(source, output, include_agents, False, False, quiet)
 
     if open_browser:
         index_url = (output / "index.html").resolve().as_uri()
@@ -2145,7 +2259,7 @@ def _run_watch_mode(source, output, include_agents, open_browser, quiet, debounc
 
     observer = Observer()
     handler = TranscriptWatcher(output, debounce, quiet)
-    handler.generation_callback = run_generation
+    handler.generation_callback = run_incremental_generation
     observer.schedule(handler, str(source), recursive=True)
     observer.start()
 
