@@ -245,6 +245,40 @@ LIMIT 10;
 
 Use `--include-thinking` to also export Claude's thinking blocks (these can be 10KB+ each, so they're opt-in).
 
+### Star Schema Analytics (Advanced)
+
+For advanced analytics use cases, the library provides a comprehensive star schema data model. This enables dimensional analysis across tools, models, time periods, and more.
+
+```python
+from pathlib import Path
+from claude_code_transcripts import create_star_schema, run_star_schema_etl
+
+# Create the star schema database
+conn = create_star_schema(Path("analytics.duckdb"))
+
+# Load sessions
+session_path = Path("~/.claude/projects/myproject/session.jsonl")
+run_star_schema_etl(conn, session_path, "My Project")
+
+# Query using dimensional joins
+result = conn.execute("""
+    SELECT dt.tool_category, COUNT(*) as uses
+    FROM fact_tool_calls ftc
+    JOIN dim_tool dt ON ftc.tool_key = dt.tool_key
+    GROUP BY dt.tool_category
+    ORDER BY uses DESC
+""").fetchall()
+```
+
+**Key features:**
+
+- **Dimension tables**: dim_tool, dim_model, dim_date, dim_time, dim_project, dim_session, dim_file, dim_programming_language
+- **Fact tables**: fact_messages, fact_tool_calls, fact_content_blocks, fact_session_summary, fact_file_operations, fact_code_blocks, fact_errors
+- **Granular extraction**: Response times, conversation depth, entity extraction (file paths, URLs, function names), tool chain patterns
+- **LLM enrichment support**: Optional tables for intent classification, sentiment analysis, and session insights
+
+See [docs/STAR_SCHEMA.md](docs/STAR_SCHEMA.md) for the complete schema documentation and example queries.
+
 ## Development
 
 To contribute to this tool, first checkout the code. You can run the tests using `uv run`:
