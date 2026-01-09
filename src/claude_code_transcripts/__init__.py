@@ -646,6 +646,15 @@ def _convert_codex_content_to_claude(content_blocks):
         block_type = block.get("type")
         if block_type == "input_text":
             claude_blocks.append({"type": "text", "text": block.get("text", "")})
+        elif block_type == "reasoning":
+            reasoning_text = (
+                block.get("text")
+                or block.get("reasoning")
+                or block.get("content")
+                or ""
+            )
+            if reasoning_text:
+                claude_blocks.append({"type": "thinking", "thinking": reasoning_text})
         elif block_type == "output_text":
             claude_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "text":
@@ -723,6 +732,20 @@ def _parse_codex_jsonl_file(filepath):
             }
         )
 
+    def add_thinking(thinking, timestamp):
+        if not thinking:
+            return
+        loglines.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "thinking", "thinking": thinking}],
+                },
+            }
+        )
+
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -757,6 +780,14 @@ def _parse_codex_jsonl_file(filepath):
                             timestamp,
                             bool(payload.get("is_error")),
                         )
+                    elif payload_type == "reasoning":
+                        add_thinking(
+                            payload.get("text")
+                            or payload.get("reasoning")
+                            or payload.get("content")
+                            or "",
+                            timestamp,
+                        )
                 elif record_type == "message":
                     add_message(
                         obj.get("role"),
@@ -778,6 +809,14 @@ def _parse_codex_jsonl_file(filepath):
                         obj.get("output", ""),
                         timestamp,
                         bool(obj.get("is_error")),
+                    )
+                elif record_type == "reasoning":
+                    add_thinking(
+                        obj.get("text")
+                        or obj.get("reasoning")
+                        or obj.get("content")
+                        or "",
+                        timestamp,
                     )
 
             except json.JSONDecodeError:
