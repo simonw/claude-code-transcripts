@@ -332,3 +332,131 @@ class TestUnifiedHtmlStats:
         html = (output_dir / "unified.html").read_text(encoding="utf-8")
         # Should have timestamp elements
         assert "<time" in html or "timestamp" in html.lower()
+
+
+class TestUnifiedHtmlNavButtons:
+    """Tests for message navigation buttons."""
+
+    def test_has_message_wrappers(self, output_dir):
+        """Test that messages are wrapped with navigation buttons."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have message wrapper divs
+        assert 'class="message-wrapper"' in html
+
+    def test_has_prev_next_buttons(self, output_dir):
+        """Test that prev/next navigation buttons are present."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have prev and next buttons
+        assert 'class="msg-nav-btn prev-btn"' in html
+        assert 'class="msg-nav-btn next-btn"' in html
+
+    def test_nav_buttons_have_aria_labels(self, output_dir):
+        """Test that navigation buttons have accessible labels."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        assert 'aria-label="Previous message"' in html
+        assert 'aria-label="Next message"' in html
+
+    def test_keyboard_navigation_js(self, output_dir):
+        """Test that keyboard navigation (j/k keys) is supported."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have j/k keyboard navigation in JavaScript
+        assert "e.key === 'j'" in html or 'e.key === "j"' in html
+        assert "e.key === 'k'" in html or 'e.key === "k"' in html
+
+
+class TestUnifiedHtmlDarkTheme:
+    """Tests for dark theme styling."""
+
+    def test_has_dark_background(self, output_dir):
+        """Test that the unified UI has a dark background."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have dark background color variable
+        assert "--bg-color: #0f172a" in html or "bg-color" in html
+
+    def test_has_dark_card_background(self, output_dir):
+        """Test that cards have dark backgrounds."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have dark card backgrounds
+        assert "--card-bg: #1e293b" in html
+
+    def test_has_light_text_color(self, output_dir):
+        """Test that text is light colored for dark theme."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have light text color
+        assert "--text-color: #e2e8f0" in html
+
+
+class TestSystemInfoSeparation:
+    """Tests for separating system info from user messages."""
+
+    def test_system_info_style_exists(self, output_dir):
+        """Test that system-info CSS class exists for separated content."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        generate_unified_html(fixture_path, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have system-info styling in CSS
+        assert ".system-info" in html
+
+    def test_separates_ide_opened_file(self, output_dir):
+        """Test that <ide_opened_file> tags are separated from user content."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {
+                        "content": "<ide_opened_file>User opened file.txt</ide_opened_file>\nActual user prompt here",
+                        "role": "user",
+                    },
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Response"}],
+                    },
+                },
+            ]
+        }
+
+        session_file = output_dir / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        generate_unified_html(session_file, output_dir)
+
+        html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should have system info separated
+        assert "system-info" in html
+        # The user prompt should still be present
+        assert "Actual user prompt here" in html
