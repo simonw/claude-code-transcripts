@@ -1140,6 +1140,676 @@ GIST_PREVIEW_JS = r"""
 })();
 """
 
+# CSS for the unified single-page UI with sidebar navigation
+UNIFIED_CSS = """
+:root {
+    --bg-color: #f8fafc;
+    --sidebar-bg: #1e293b;
+    --sidebar-text: #e2e8f0;
+    --sidebar-hover: #334155;
+    --sidebar-active: #3b82f6;
+    --card-bg: #ffffff;
+    --user-bg: #dbeafe;
+    --user-border: #3b82f6;
+    --assistant-bg: #f8fafc;
+    --assistant-border: #64748b;
+    --thinking-bg: #fef3c7;
+    --thinking-border: #f59e0b;
+    --thinking-text: #78716c;
+    --tool-bg: #f3e8ff;
+    --tool-border: #a855f7;
+    --tool-result-bg: #dcfce7;
+    --tool-error-bg: #fee2e2;
+    --text-color: #1e293b;
+    --text-muted: #64748b;
+    --code-bg: #1e293b;
+    --code-text: #a5d6a7;
+    --sidebar-width: 320px;
+    --header-height: 60px;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.sidebar-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.sidebar-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.sidebar-search input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.1);
+    color: var(--sidebar-text);
+    font-size: 14px;
+}
+
+.sidebar-search input::placeholder {
+    color: rgba(255,255,255,0.5);
+}
+
+.sidebar-search input:focus {
+    outline: none;
+    border-color: var(--sidebar-active);
+    background: rgba(255,255,255,0.15);
+}
+
+.sidebar-stats {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: rgba(255,255,255,0.6);
+}
+
+.sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.sidebar-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sidebar-nav li {
+    margin: 0;
+}
+
+.nav-link {
+    display: block;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: var(--sidebar-text);
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+    background: var(--sidebar-hover);
+    border-left-color: rgba(255,255,255,0.3);
+}
+
+.nav-link.active {
+    background: var(--sidebar-hover);
+    border-left-color: var(--sidebar-active);
+}
+
+.nav-num {
+    font-weight: 600;
+    color: var(--sidebar-active);
+    margin-right: 8px;
+}
+
+.nav-preview {
+    display: block;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.8);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 4px;
+}
+
+.nav-time {
+    display: block;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.5);
+    margin-top: 4px;
+}
+
+/* Mobile sidebar toggle */
+.mobile-sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 200;
+    background: var(--sidebar-bg);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* Main content */
+.main-content {
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-header {
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+    padding: 16px 32px;
+    border-bottom: 1px solid #e2e8f0;
+    z-index: 50;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+}
+
+.main-header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.header-stats {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.search-results-banner {
+    padding: 12px 32px;
+    background: #fef3c7;
+    border-bottom: 1px solid #fcd34d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.search-results-banner.hidden {
+    display: none;
+}
+
+.clear-search-btn {
+    background: #f59e0b;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.transcript-content {
+    flex: 1;
+    padding: 24px 32px;
+    max-width: 900px;
+}
+
+.transcript-section {
+    margin-bottom: 32px;
+    scroll-margin-top: 80px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--user-border);
+}
+
+.section-num {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--user-border);
+}
+
+.section-content {
+    /* Messages go here */
+}
+
+/* Message styles (reuse from original) */
+.message { margin-bottom: 16px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.message.user { background: var(--user-bg); border-left: 4px solid var(--user-border); }
+.message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); }
+.message.tool-reply { background: #fef3c7; border-left: 4px solid #f59e0b; }
+.tool-reply .role-label { color: #d97706; }
+.message-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; background: rgba(0,0,0,0.03); font-size: 0.85rem; }
+.role-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+.user .role-label { color: var(--user-border); }
+time { color: var(--text-muted); font-size: 0.8rem; }
+.timestamp-link { color: inherit; text-decoration: none; }
+.timestamp-link:hover { text-decoration: underline; }
+.message:target { animation: highlight 2s ease-out; }
+@keyframes highlight { 0% { background-color: rgba(59, 130, 246, 0.3); } 100% { background-color: transparent; } }
+.message-content { padding: 16px; }
+.message-content p { margin: 0 0 12px 0; }
+.message-content p:last-child { margin-bottom: 0; }
+
+/* Thinking, tools, etc. (from original) */
+.thinking { background: var(--thinking-bg); border: 1px solid var(--thinking-border); border-radius: 8px; padding: 12px; margin: 12px 0; font-size: 0.9rem; color: var(--thinking-text); }
+.thinking-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #f57c00; margin-bottom: 8px; }
+.assistant-text { margin: 8px 0; }
+.tool-use { background: var(--tool-bg); border: 1px solid var(--tool-border); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
+.tool-result.tool-error { background: var(--tool-error-bg); }
+
+/* File tools */
+.file-tool { border-radius: 8px; padding: 12px; margin: 12px 0; }
+.write-tool { background: linear-gradient(135deg, #dbeafe 0%, #dcfce7 100%); border: 1px solid #22c55e; }
+.edit-tool { background: linear-gradient(135deg, #fef3c7 0%, #fce7f3 100%); border: 1px solid #f59e0b; }
+.file-tool-header { font-weight: 600; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-size: 0.95rem; }
+.write-header { color: #16a34a; }
+.edit-header { color: #d97706; }
+.file-tool-path { font-family: monospace; background: rgba(0,0,0,0.08); padding: 2px 8px; border-radius: 4px; }
+.file-tool-fullpath { font-family: monospace; font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px; word-break: break-all; }
+.edit-section { display: flex; margin: 4px 0; border-radius: 4px; overflow: hidden; }
+.edit-label { padding: 8px 12px; font-weight: bold; font-family: monospace; }
+.edit-old { background: #fce7f3; }
+.edit-old .edit-label { color: #be185d; background: #fbcfe8; }
+.edit-new { background: #dcfce7; }
+.edit-new .edit-label { color: #16a34a; background: #86efac; }
+.edit-content { margin: 0; flex: 1; background: transparent; font-size: 0.85rem; }
+
+/* Todo list */
+.todo-list { background: linear-gradient(135deg, #dcfce7 0%, #ecfccb 100%); border: 1px solid #86efac; border-radius: 8px; padding: 12px; margin: 12px 0; }
+.todo-header { font-weight: 600; color: #16a34a; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+.todo-items { list-style: none; margin: 0; padding: 0; }
+.todo-item { display: flex; align-items: flex-start; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.9rem; }
+.todo-item:last-child { border-bottom: none; }
+.todo-icon { flex-shrink: 0; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-weight: bold; border-radius: 50%; }
+.todo-completed .todo-icon { color: #16a34a; background: rgba(22, 163, 74, 0.15); }
+.todo-completed .todo-content { color: #4ade80; text-decoration: line-through; }
+.todo-in-progress .todo-icon { color: #f59e0b; background: rgba(245, 158, 11, 0.15); }
+.todo-in-progress .todo-content { color: #d97706; font-weight: 500; }
+.todo-pending .todo-icon { color: #64748b; background: rgba(0,0,0,0.05); }
+
+/* Code blocks */
+pre { background: var(--code-bg); color: var(--code-text); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; margin: 8px 0; white-space: pre-wrap; word-wrap: break-word; }
+pre.json { color: #e2e8f0; }
+code { background: rgba(0,0,0,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+pre code { background: none; padding: 0; }
+
+/* Truncatable content */
+.truncatable { position: relative; }
+.truncatable.truncated .truncatable-content { max-height: 200px; overflow: hidden; }
+.truncatable.truncated::after { content: ''; position: absolute; bottom: 32px; left: 0; right: 0; height: 60px; background: linear-gradient(to bottom, transparent, var(--card-bg)); pointer-events: none; }
+.expand-btn { display: none; width: 100%; padding: 8px 16px; margin-top: 4px; background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; cursor: pointer; font-size: 0.85rem; color: var(--text-muted); }
+.expand-btn:hover { background: rgba(0,0,0,0.1); }
+.truncatable.truncated .expand-btn, .truncatable.expanded .expand-btn { display: block; }
+
+/* Commit cards */
+.commit-card { margin: 8px 0; padding: 10px 14px; background: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px; }
+.commit-card a { text-decoration: none; color: #78350f; display: block; }
+.commit-card a:hover { color: #d97706; }
+.commit-card-hash { font-family: monospace; color: #d97706; font-weight: 600; margin-right: 8px; }
+
+/* Search highlight */
+.search-match { background: #fef08a; border-radius: 2px; padding: 1px 2px; }
+.search-hidden { display: none !important; }
+
+/* Footer */
+.main-footer {
+    padding: 24px 32px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-top: 1px solid #e2e8f0;
+}
+
+.main-footer a {
+    color: var(--user-border);
+    text-decoration: none;
+}
+
+.main-footer a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .sidebar-toggle {
+        display: block;
+    }
+
+    .mobile-sidebar-toggle {
+        display: block;
+    }
+
+    .main-content {
+        margin-left: 0;
+    }
+
+    .transcript-content {
+        padding: 16px;
+    }
+
+    .main-header {
+        padding: 16px;
+        padding-left: 60px;
+    }
+}
+
+@media (max-width: 600px) {
+    .sidebar-stats {
+        flex-wrap: wrap;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+}
+
+/* User content */
+.user-content { margin: 0; }
+"""
+
+# JavaScript for the unified single-page UI
+UNIFIED_JS = """
+(function() {
+    // Format timestamps
+    document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
+        const timestamp = el.getAttribute('data-timestamp');
+        const date = new Date(timestamp);
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        if (isToday) { el.textContent = timeStr; }
+        else { el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr; }
+    });
+
+    // JSON syntax highlighting
+    document.querySelectorAll('pre.json').forEach(function(el) {
+        let text = el.textContent;
+        text = text.replace(/"([^"]+)":/g, '<span style="color: #c4b5fd">"$1"</span>:');
+        text = text.replace(/: "([^"]*)"/g, ': <span style="color: #7dd3fc">"$1"</span>');
+        text = text.replace(/: (\\d+)/g, ': <span style="color: #fcd34d">$1</span>');
+        text = text.replace(/: (true|false|null)/g, ': <span style="color: #f9a8d4">$1</span>');
+        el.innerHTML = text;
+    });
+
+    // Truncatable content
+    document.querySelectorAll('.truncatable').forEach(function(wrapper) {
+        const content = wrapper.querySelector('.truncatable-content');
+        const btn = wrapper.querySelector('.expand-btn');
+        if (content && content.scrollHeight > 250) {
+            wrapper.classList.add('truncated');
+            if (btn) {
+                btn.addEventListener('click', function() {
+                    if (wrapper.classList.contains('truncated')) {
+                        wrapper.classList.remove('truncated');
+                        wrapper.classList.add('expanded');
+                        btn.textContent = 'Show less';
+                    } else {
+                        wrapper.classList.remove('expanded');
+                        wrapper.classList.add('truncated');
+                        btn.textContent = 'Show more';
+                    }
+                });
+            }
+        }
+    });
+
+    // Sidebar navigation
+    const sidebar = document.getElementById('sidebar');
+    const mobileToggle = document.getElementById('mobile-sidebar-toggle');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const navLinks = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('.transcript-section');
+
+    // Mobile sidebar toggle
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', function() {
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function() {
+            sidebar.classList.remove('open');
+        });
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(e) {
+        if (window.innerWidth <= 900 && sidebar.classList.contains('open')) {
+            if (!sidebar.contains(e.target) && e.target !== mobileToggle) {
+                sidebar.classList.remove('open');
+            }
+        }
+    });
+
+    // Close sidebar when clicking a link on mobile
+    navLinks.forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth <= 900) {
+                sidebar.classList.remove('open');
+            }
+        });
+    });
+
+    // Highlight active section on scroll
+    function updateActiveSection() {
+        let currentSection = null;
+        const scrollTop = window.scrollY + 100;
+
+        sections.forEach(function(section) {
+            if (section.offsetTop <= scrollTop) {
+                currentSection = section;
+            }
+        });
+
+        navLinks.forEach(function(link) {
+            link.classList.remove('active');
+            if (currentSection && link.getAttribute('data-section') === currentSection.id) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    window.addEventListener('scroll', updateActiveSection);
+    updateActiveSection();
+
+    // Search functionality
+    const searchInput = document.getElementById('unified-search');
+    const searchBanner = document.getElementById('search-results-banner');
+    const searchCount = document.getElementById('search-results-count');
+    const clearSearchBtn = document.getElementById('clear-search');
+
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+    }
+
+    function performSearch(query) {
+        const trimmedQuery = query.trim().toLowerCase();
+
+        // Clear previous highlights
+        document.querySelectorAll('.search-match').forEach(function(el) {
+            const parent = el.parentNode;
+            parent.replaceChild(document.createTextNode(el.textContent), el);
+            parent.normalize();
+        });
+
+        // Remove hidden class from all sections
+        sections.forEach(function(section) {
+            section.classList.remove('search-hidden');
+        });
+
+        if (!trimmedQuery) {
+            searchBanner.classList.add('hidden');
+            // Update URL to remove search param
+            if (window.location.hash.includes('search=')) {
+                history.replaceState(null, '', window.location.pathname);
+            }
+            return;
+        }
+
+        // Update URL with search query
+        history.replaceState(null, '', window.location.pathname + '#search=' + encodeURIComponent(trimmedQuery));
+
+        let matchCount = 0;
+
+        sections.forEach(function(section) {
+            const content = section.textContent.toLowerCase();
+            if (content.includes(trimmedQuery)) {
+                matchCount++;
+                // Highlight matches in text nodes
+                highlightMatches(section, query);
+            } else {
+                section.classList.add('search-hidden');
+            }
+        });
+
+        searchBanner.classList.remove('hidden');
+        searchCount.textContent = matchCount + ' section(s) match "' + query + '"';
+
+        // Update nav links to show/hide based on visible sections
+        navLinks.forEach(function(link) {
+            const sectionId = link.getAttribute('data-section');
+            const section = document.getElementById(sectionId);
+            if (section && section.classList.contains('search-hidden')) {
+                link.style.opacity = '0.4';
+            } else {
+                link.style.opacity = '1';
+            }
+        });
+    }
+
+    function highlightMatches(element, query) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+        const nodesToReplace = [];
+
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node.nodeValue.toLowerCase().includes(query.toLowerCase())) {
+                nodesToReplace.push(node);
+            }
+        }
+
+        nodesToReplace.forEach(function(node) {
+            const text = node.nodeValue;
+            const regex = new RegExp('(' + escapeRegex(query) + ')', 'gi');
+            const parts = text.split(regex);
+
+            if (parts.length > 1) {
+                const span = document.createElement('span');
+                parts.forEach(function(part) {
+                    if (part.toLowerCase() === query.toLowerCase()) {
+                        const mark = document.createElement('mark');
+                        mark.className = 'search-match';
+                        mark.textContent = part;
+                        span.appendChild(mark);
+                    } else {
+                        span.appendChild(document.createTextNode(part));
+                    }
+                });
+                node.parentNode.replaceChild(span, node);
+            }
+        });
+    }
+
+    if (searchInput) {
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                performSearch(searchInput.value);
+            }, 300);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                performSearch('');
+            }
+        });
+    }
+
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            performSearch('');
+        });
+    }
+
+    // Check for search query in URL on page load
+    if (window.location.hash.startsWith('#search=')) {
+        const query = decodeURIComponent(window.location.hash.substring(8));
+        if (query && searchInput) {
+            searchInput.value = query;
+            performSearch(query);
+        }
+    }
+
+    // Keyboard shortcut for search (Ctrl/Cmd + K)
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        }
+    });
+})();
+"""
+
 
 def inject_gist_preview_js(output_dir):
     """Inject gist preview JavaScript into all HTML files in the output directory."""
@@ -1376,6 +2046,137 @@ def generate_html(json_path, output_dir, github_repo=None):
     )
 
 
+def generate_unified_html(json_path, output_dir, github_repo=None):
+    """Generate a single unified HTML page with all conversations.
+
+    Creates a modern single-page UI with:
+    - Sidebar navigation with links to each prompt
+    - In-page search functionality
+    - All messages rendered in a single scrollable page
+
+    Args:
+        json_path: Path to the session JSON/JSONL file
+        output_dir: Directory to write the unified.html file
+        github_repo: Optional GitHub repo (owner/name) for commit links
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+
+    # Load session file (supports both JSON and JSONL)
+    data = parse_session_file(json_path)
+    loglines = data.get("loglines", [])
+
+    # Auto-detect GitHub repo if not provided
+    if github_repo is None:
+        github_repo = detect_github_repo(loglines)
+        if github_repo:
+            print(f"Auto-detected GitHub repo: {github_repo}")
+
+    # Set module-level variable for render functions
+    global _github_repo
+    _github_repo = github_repo
+
+    # Group messages into conversations
+    conversations = []
+    current_conv = None
+    for entry in loglines:
+        log_type = entry.get("type")
+        timestamp = entry.get("timestamp", "")
+        is_compact_summary = entry.get("isCompactSummary", False)
+        message_data = entry.get("message", {})
+        if not message_data:
+            continue
+        message_json = json.dumps(message_data)
+        is_user_prompt = False
+        user_text = None
+        if log_type == "user":
+            content = message_data.get("content", "")
+            text = extract_text_from_content(content)
+            if text:
+                is_user_prompt = True
+                user_text = text
+        if is_user_prompt:
+            if current_conv:
+                conversations.append(current_conv)
+            current_conv = {
+                "user_text": user_text,
+                "timestamp": timestamp,
+                "messages": [(log_type, message_json, timestamp)],
+                "is_continuation": bool(is_compact_summary),
+            }
+        elif current_conv:
+            current_conv["messages"].append((log_type, message_json, timestamp))
+    if current_conv:
+        conversations.append(current_conv)
+
+    # Build navigation items and sections
+    nav_items = []
+    sections = []
+    total_messages = 0
+    total_tool_counts = {}
+
+    prompt_num = 0
+    for conv in conversations:
+        # Skip continuations for nav items (but still render them)
+        if conv.get("is_continuation"):
+            continue
+        if conv["user_text"].startswith("Stop hook feedback:"):
+            continue
+
+        prompt_num += 1
+        total_messages += len(conv["messages"])
+
+        # Analyze for tool counts
+        stats = analyze_conversation(conv["messages"])
+        for tool, count in stats["tool_counts"].items():
+            total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
+
+        # Create navigation item
+        preview_text = conv["user_text"][:60]
+        if len(conv["user_text"]) > 60:
+            preview_text += "..."
+        nav_items.append(
+            {
+                "num": prompt_num,
+                "preview": preview_text,
+                "timestamp": conv["timestamp"],
+            }
+        )
+
+        # Render messages for this section
+        messages_html = []
+        for log_type, message_json, timestamp in conv["messages"]:
+            msg_html = render_message(log_type, message_json, timestamp)
+            if msg_html:
+                messages_html.append(msg_html)
+
+        sections.append(
+            {
+                "num": prompt_num,
+                "timestamp": conv["timestamp"],
+                "content": "".join(messages_html),
+            }
+        )
+
+    total_tool_calls = sum(total_tool_counts.values())
+
+    # Render the unified template
+    unified_template = get_template("unified.html")
+    unified_content = unified_template.render(
+        unified_css=UNIFIED_CSS,
+        unified_js=UNIFIED_JS,
+        nav_items=nav_items,
+        sections=sections,
+        prompt_count=prompt_num,
+        message_count=total_messages,
+        tool_count=total_tool_calls,
+    )
+
+    unified_path = output_dir / "unified.html"
+    unified_path.write_text(unified_content, encoding="utf-8")
+    print(f"Generated {unified_path.resolve()} ({prompt_num} prompts, unified view)")
+
+
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
 def cli():
@@ -1422,7 +2223,15 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--new-ui",
+    "new_ui",
+    is_flag=True,
+    help="Generate a modern unified single-page UI with sidebar navigation and search.",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, new_ui
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1473,7 +2282,13 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
+
+    if new_ui:
+        generate_unified_html(session_file, output, github_repo=repo)
+        output_file = "unified.html"
+    else:
+        generate_html(session_file, output, github_repo=repo)
+        output_file = "index.html"
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1491,13 +2306,13 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/{output_file}"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
     if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        file_url = (output / output_file).resolve().as_uri()
+        webbrowser.open(file_url)
 
 
 def is_url(path):
@@ -1574,7 +2389,15 @@ def fetch_url_to_tempfile(url):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
+@click.option(
+    "--new-ui",
+    "new_ui",
+    is_flag=True,
+    help="Generate a modern unified single-page UI with sidebar navigation and search.",
+)
+def json_cmd(
+    json_file, output, output_auto, repo, gist, include_json, open_browser, new_ui
+):
     """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
@@ -1604,7 +2427,13 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         )
 
     output = Path(output)
-    generate_html(json_file_path, output, github_repo=repo)
+
+    if new_ui:
+        generate_unified_html(json_file_path, output, github_repo=repo)
+        output_file = "unified.html"
+    else:
+        generate_html(json_file_path, output, github_repo=repo)
+        output_file = "index.html"
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1622,13 +2451,13 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/{output_file}"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
     if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        file_url = (output / output_file).resolve().as_uri()
+        webbrowser.open(file_url)
 
 
 def resolve_credentials(token, org_uuid):
