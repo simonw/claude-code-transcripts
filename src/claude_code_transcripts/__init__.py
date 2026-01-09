@@ -1140,6 +1140,1337 @@ GIST_PREVIEW_JS = r"""
 })();
 """
 
+# CSS for the unified single-page UI with sidebar navigation
+UNIFIED_CSS = """
+:root {
+    --bg-color: #0f172a;
+    --sidebar-bg: #1e293b;
+    --sidebar-text: #e2e8f0;
+    --sidebar-hover: #334155;
+    --sidebar-active: #3b82f6;
+    --card-bg: #1e293b;
+    --user-bg: #1e3a5f;
+    --user-border: #3b82f6;
+    --assistant-bg: #1e293b;
+    --assistant-border: #64748b;
+    --thinking-bg: #422006;
+    --thinking-border: #f59e0b;
+    --thinking-text: #fcd34d;
+    --tool-bg: #2e1065;
+    --tool-border: #a855f7;
+    --tool-result-bg: #14532d;
+    --tool-error-bg: #450a0a;
+    --text-color: #e2e8f0;
+    --text-muted: #94a3b8;
+    --code-bg: #0f172a;
+    --code-text: #a5d6a7;
+    --sidebar-width: 320px;
+    --header-height: 60px;
+    --border-color: #334155;
+    --system-bg: #1a1a2e;
+    --system-border: #475569;
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    padding: 0;
+    line-height: 1.6;
+}
+
+/* Sidebar */
+.sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--sidebar-width);
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    display: flex;
+    flex-direction: column;
+    z-index: 100;
+    transition: transform 0.3s ease;
+}
+
+.sidebar-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.sidebar-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--sidebar-text);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.sidebar-search {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-search input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: var(--sidebar-text);
+    font-size: 14px;
+}
+
+.sidebar-search input::placeholder {
+    color: var(--text-muted);
+}
+
+.sidebar-search input:focus {
+    outline: none;
+    border-color: var(--sidebar-active);
+    background: rgba(255,255,255,0.1);
+}
+
+.sidebar-stats {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    gap: 12px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.sidebar-nav ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.sidebar-nav li {
+    margin: 0;
+}
+
+.nav-link {
+    display: block;
+    padding: 12px 16px;
+    text-decoration: none;
+    color: var(--sidebar-text);
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.nav-link:hover {
+    background: var(--sidebar-hover);
+    border-left-color: var(--text-muted);
+}
+
+.nav-link.active {
+    background: var(--sidebar-hover);
+    border-left-color: var(--sidebar-active);
+}
+
+.nav-num {
+    font-weight: 600;
+    color: var(--sidebar-active);
+    margin-right: 8px;
+}
+
+.nav-preview {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 4px;
+}
+
+.nav-time {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+/* Mobile sidebar toggle */
+.mobile-sidebar-toggle {
+    display: none;
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 200;
+    background: var(--sidebar-bg);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* Main content */
+.main-content {
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-header {
+    position: sticky;
+    top: 0;
+    background: var(--card-bg);
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border-color);
+    z-index: 50;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.main-header h1 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.header-stats {
+    margin: 4px 0 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.search-results-banner {
+    padding: 12px 32px;
+    background: #422006;
+    border-bottom: 1px solid #f59e0b;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #fcd34d;
+}
+
+.search-results-banner.hidden {
+    display: none;
+}
+
+.clear-search-btn {
+    background: #f59e0b;
+    color: #422006;
+    border: none;
+    border-radius: 4px;
+    padding: 4px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.clear-search-btn:hover {
+    background: #fbbf24;
+}
+
+.transcript-content {
+    flex: 1;
+    padding: 24px 32px;
+    max-width: 1000px;
+}
+
+.transcript-section {
+    margin-bottom: 32px;
+    scroll-margin-top: 80px;
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    margin-bottom: 12px;
+    border-bottom: 2px solid var(--user-border);
+}
+
+.section-num {
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--sidebar-active);
+}
+
+.section-header time {
+    color: var(--text-muted);
+}
+
+.section-content {
+    /* Messages go here */
+}
+
+/* Message wrapper with navigation buttons */
+.message-wrapper {
+    display: flex;
+    margin-bottom: 16px;
+    align-items: stretch;
+}
+
+.msg-nav-btn {
+    width: 24px;
+    min-width: 24px;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+}
+
+.msg-nav-btn:hover {
+    background: var(--sidebar-hover);
+    color: var(--sidebar-active);
+    border-color: var(--sidebar-active);
+}
+
+.msg-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.msg-nav-btn.prev-btn {
+    border-radius: 8px 0 0 8px;
+    border-right: none;
+}
+
+.msg-nav-btn.next-btn {
+    border-radius: 0 8px 8px 0;
+    border-left: none;
+}
+
+.msg-nav-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* Message styles */
+.message {
+    flex: 1;
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.message.user {
+    background: var(--user-bg);
+    border-top: 1px solid var(--user-border);
+    border-bottom: 1px solid var(--user-border);
+}
+
+.message.assistant {
+    background: var(--assistant-bg);
+    border-top: 1px solid var(--assistant-border);
+    border-bottom: 1px solid var(--assistant-border);
+}
+
+.message.tool-reply {
+    background: #422006;
+    border-top: 1px solid #f59e0b;
+    border-bottom: 1px solid #f59e0b;
+}
+
+.tool-reply .role-label { color: #fcd34d; }
+
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: rgba(0,0,0,0.2);
+    font-size: 0.85rem;
+}
+
+.role-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.user .role-label { color: var(--sidebar-active); }
+.assistant .role-label { color: var(--text-muted); }
+
+time { color: var(--text-muted); font-size: 0.8rem; }
+.timestamp-link { color: inherit; text-decoration: none; }
+.timestamp-link:hover { text-decoration: underline; }
+
+.message:target { animation: highlight 2s ease-out; }
+@keyframes highlight { 0% { box-shadow: 0 0 0 3px var(--sidebar-active); } 100% { box-shadow: 0 1px 3px rgba(0,0,0,0.2); } }
+
+.message-content { padding: 16px; }
+.message-content p { margin: 0 0 12px 0; }
+.message-content p:last-child { margin-bottom: 0; }
+
+/* System info block (for IDE opened file, etc.) */
+.system-info {
+    background: var(--system-bg);
+    border: 1px solid var(--system-border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.system-info-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--system-border);
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+}
+
+.system-info p { margin: 0; }
+
+/* Thinking, tools, etc. */
+.thinking {
+    background: var(--thinking-bg);
+    border: 1px solid var(--thinking-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+    font-size: 0.9rem;
+    color: var(--thinking-text);
+}
+
+.thinking-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--thinking-border);
+    margin-bottom: 8px;
+}
+
+.assistant-text { margin: 8px 0; }
+
+.tool-use {
+    background: var(--tool-bg);
+    border: 1px solid var(--tool-border);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+}
+
+.tool-header {
+    font-weight: 600;
+    color: #c4b5fd;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tool-description {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    font-style: italic;
+}
+
+.tool-result {
+    background: var(--tool-result-bg);
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+    color: #86efac;
+}
+
+.tool-result.tool-error {
+    background: var(--tool-error-bg);
+    color: #fca5a5;
+}
+
+/* File tools */
+.file-tool { border-radius: 8px; padding: 12px; margin: 12px 0; }
+
+.write-tool {
+    background: linear-gradient(135deg, #14532d 0%, #1e3a5f 100%);
+    border: 1px solid #22c55e;
+}
+
+.edit-tool {
+    background: linear-gradient(135deg, #422006 0%, #2e1065 100%);
+    border: 1px solid #f59e0b;
+}
+
+.file-tool-header {
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.95rem;
+}
+
+.write-header { color: #4ade80; }
+.edit-header { color: #fcd34d; }
+
+.file-tool-path {
+    font-family: monospace;
+    background: rgba(255,255,255,0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.file-tool-fullpath {
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+    word-break: break-all;
+}
+
+.edit-section { display: flex; margin: 4px 0; border-radius: 4px; overflow: hidden; }
+.edit-label { padding: 8px 12px; font-weight: bold; font-family: monospace; }
+.edit-old { background: #450a0a; }
+.edit-old .edit-label { color: #fca5a5; background: #7f1d1d; }
+.edit-new { background: #14532d; }
+.edit-new .edit-label { color: #86efac; background: #166534; }
+.edit-content { margin: 0; flex: 1; background: transparent; font-size: 0.85rem; color: var(--text-color); }
+
+/* Todo list */
+.todo-list {
+    background: linear-gradient(135deg, #14532d 0%, #1a2e05 100%);
+    border: 1px solid #4ade80;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 12px 0;
+}
+
+.todo-header {
+    font-weight: 600;
+    color: #4ade80;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.todo-items { list-style: none; margin: 0; padding: 0; }
+
+.todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-size: 0.9rem;
+}
+
+.todo-item:last-child { border-bottom: none; }
+
+.todo-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    border-radius: 50%;
+}
+
+.todo-completed .todo-icon { color: #4ade80; background: rgba(74, 222, 128, 0.2); }
+.todo-completed .todo-content { color: #86efac; text-decoration: line-through; }
+.todo-in-progress .todo-icon { color: #fcd34d; background: rgba(252, 211, 77, 0.2); }
+.todo-in-progress .todo-content { color: #fcd34d; font-weight: 500; }
+.todo-pending .todo-icon { color: var(--text-muted); background: rgba(255,255,255,0.1); }
+.todo-pending .todo-content { color: var(--text-muted); }
+
+/* Code blocks */
+pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 12px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 8px 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid var(--border-color);
+}
+
+pre.json { color: #e2e8f0; }
+code { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+pre code { background: none; padding: 0; }
+
+/* Truncatable content */
+.truncatable { position: relative; }
+.truncatable.truncated .truncatable-content { max-height: 200px; overflow: hidden; }
+.truncatable.truncated::after {
+    content: '';
+    position: absolute;
+    bottom: 32px;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(to bottom, transparent, var(--card-bg));
+    pointer-events: none;
+}
+
+.expand-btn {
+    display: none;
+    width: 100%;
+    padding: 8px 16px;
+    margin-top: 4px;
+    background: var(--sidebar-hover);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.expand-btn:hover {
+    background: var(--sidebar-bg);
+    color: var(--text-color);
+}
+
+.truncatable.truncated .expand-btn, .truncatable.expanded .expand-btn { display: block; }
+
+/* Commit cards */
+.commit-card {
+    margin: 8px 0;
+    padding: 10px 14px;
+    background: #422006;
+    border-left: 4px solid #f59e0b;
+    border-radius: 6px;
+}
+
+.commit-card a {
+    text-decoration: none;
+    color: #fcd34d;
+    display: block;
+}
+
+.commit-card a:hover { color: #fbbf24; }
+.commit-card-hash { font-family: monospace; color: #f59e0b; font-weight: 600; margin-right: 8px; }
+
+/* Search highlight */
+.search-match { background: #854d0e; border-radius: 2px; padding: 1px 2px; color: #fef08a; }
+.search-hidden { display: none !important; }
+
+/* Footer */
+.main-footer {
+    padding: 24px 32px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.main-footer a {
+    color: var(--sidebar-active);
+    text-decoration: none;
+}
+
+.main-footer a:hover {
+    text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .sidebar-toggle {
+        display: block;
+    }
+
+    .mobile-sidebar-toggle {
+        display: block;
+    }
+
+    .main-content {
+        margin-left: 0;
+    }
+
+    .transcript-content {
+        padding: 16px;
+    }
+
+    .main-header {
+        padding: 16px;
+        padding-left: 60px;
+    }
+
+    .msg-nav-btn {
+        width: 20px;
+        min-width: 20px;
+    }
+}
+
+@media (max-width: 600px) {
+    .sidebar-stats {
+        flex-wrap: wrap;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .msg-nav-btn {
+        width: 16px;
+        min-width: 16px;
+    }
+}
+
+/* User content */
+.user-content { margin: 0; }
+
+/* Sidebar scrollbar theming */
+.sidebar-nav::-webkit-scrollbar {
+    width: 8px;
+}
+
+.sidebar-nav::-webkit-scrollbar-track {
+    background: var(--sidebar-bg);
+    border-radius: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Firefox scrollbar */
+.sidebar-nav {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) var(--sidebar-bg);
+}
+
+/* Message type filters */
+.message-filters {
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    transition: all 0.2s ease;
+}
+
+.filter-toggle:hover {
+    background: var(--sidebar-hover);
+}
+
+.filter-toggle.active {
+    background: var(--sidebar-active);
+    color: white;
+}
+
+.filter-toggle input {
+    display: none;
+}
+
+.filter-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.filter-toggle.active .filter-indicator {
+    background: white;
+}
+
+.filter-toggle[data-filter="user"] .filter-indicator { background: var(--user-border); }
+.filter-toggle[data-filter="assistant"] .filter-indicator { background: var(--assistant-border); }
+.filter-toggle[data-filter="tool"] .filter-indicator { background: var(--tool-border); }
+
+/* Search input with clear button */
+.search-container {
+    position: relative;
+}
+
+.search-container input {
+    width: 100%;
+    padding: 10px 32px 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    color: var(--sidebar-text);
+    font-size: 14px;
+}
+
+.search-clear {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px;
+    display: none;
+    line-height: 1;
+}
+
+.search-clear:hover {
+    color: var(--sidebar-text);
+}
+
+.search-clear.visible {
+    display: block;
+}
+
+/* Copy button */
+.copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    background: var(--sidebar-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.75rem;
+    opacity: 0;
+    transition: all 0.2s ease;
+}
+
+.code-block-wrapper {
+    position: relative;
+}
+
+.code-block-wrapper:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background: var(--sidebar-hover);
+    color: var(--text-color);
+}
+
+.copy-btn.copied {
+    background: #14532d;
+    color: #4ade80;
+    border-color: #4ade80;
+}
+
+/* Syntax highlighting for code blocks */
+.code-keyword { color: #c792ea; }
+.code-string { color: #c3e88d; }
+.code-number { color: #f78c6c; }
+.code-comment { color: #546e7a; font-style: italic; }
+.code-function { color: #82aaff; }
+.code-class { color: #ffcb6b; }
+.code-operator { color: #89ddff; }
+.code-variable { color: #f07178; }
+.code-property { color: #c792ea; }
+.code-builtin { color: #89ddff; }
+
+/* Language-specific code block styling */
+pre[data-language] {
+    position: relative;
+}
+
+pre[data-language]::before {
+    content: attr(data-language);
+    position: absolute;
+    top: 0;
+    right: 0;
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: rgba(255,255,255,0.1);
+    border-radius: 0 8px 0 4px;
+    text-transform: uppercase;
+}
+
+pre.language-python { border-left: 3px solid #3572A5; }
+pre.language-javascript, pre.language-js { border-left: 3px solid #f7df1e; }
+pre.language-typescript, pre.language-ts { border-left: 3px solid #3178c6; }
+pre.language-rust { border-left: 3px solid #dea584; }
+pre.language-go { border-left: 3px solid #00ADD8; }
+pre.language-java { border-left: 3px solid #b07219; }
+pre.language-ruby { border-left: 3px solid #701516; }
+pre.language-bash, pre.language-sh, pre.language-shell { border-left: 3px solid #89e051; }
+pre.language-css { border-left: 3px solid #563d7c; }
+pre.language-html { border-left: 3px solid #e34c26; }
+pre.language-json { border-left: 3px solid #292929; }
+pre.language-yaml, pre.language-yml { border-left: 3px solid #cb171e; }
+pre.language-sql { border-left: 3px solid #e38c00; }
+pre.language-cpp, pre.language-c { border-left: 3px solid #f34b7d; }
+"""
+
+# JavaScript for the unified single-page UI
+UNIFIED_JS = """
+(function() {
+    // Format timestamps
+    document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
+        const timestamp = el.getAttribute('data-timestamp');
+        const date = new Date(timestamp);
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+        if (isToday) { el.textContent = timeStr; }
+        else { el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr; }
+    });
+
+    // JSON syntax highlighting
+    document.querySelectorAll('pre.json').forEach(function(el) {
+        let text = el.textContent;
+        text = text.replace(/"([^"]+)":/g, '<span style="color: #c4b5fd">"$1"</span>:');
+        text = text.replace(/: "([^"]*)"/g, ': <span style="color: #7dd3fc">"$1"</span>');
+        text = text.replace(/: (\\d+)/g, ': <span style="color: #fcd34d">$1</span>');
+        text = text.replace(/: (true|false|null)/g, ': <span style="color: #f9a8d4">$1</span>');
+        el.innerHTML = text;
+    });
+
+    // Truncatable content
+    document.querySelectorAll('.truncatable').forEach(function(wrapper) {
+        const content = wrapper.querySelector('.truncatable-content');
+        const btn = wrapper.querySelector('.expand-btn');
+        if (content && content.scrollHeight > 250) {
+            wrapper.classList.add('truncated');
+            if (btn) {
+                btn.addEventListener('click', function() {
+                    if (wrapper.classList.contains('truncated')) {
+                        wrapper.classList.remove('truncated');
+                        wrapper.classList.add('expanded');
+                        btn.textContent = 'Show less';
+                    } else {
+                        wrapper.classList.remove('expanded');
+                        wrapper.classList.add('truncated');
+                        btn.textContent = 'Show more';
+                    }
+                });
+            }
+        }
+    });
+
+    // Sidebar navigation
+    const sidebar = document.getElementById('sidebar');
+    const mobileToggle = document.getElementById('mobile-sidebar-toggle');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const navLinks = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('.transcript-section');
+
+    // Mobile sidebar toggle
+    if (mobileToggle) {
+        mobileToggle.addEventListener('click', function() {
+            sidebar.classList.toggle('open');
+        });
+    }
+
+    if (sidebarToggle) {
+        sidebarToggle.addEventListener('click', function() {
+            sidebar.classList.remove('open');
+        });
+    }
+
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(e) {
+        if (window.innerWidth <= 900 && sidebar.classList.contains('open')) {
+            if (!sidebar.contains(e.target) && e.target !== mobileToggle) {
+                sidebar.classList.remove('open');
+            }
+        }
+    });
+
+    // Close sidebar when clicking a link on mobile
+    navLinks.forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth <= 900) {
+                sidebar.classList.remove('open');
+            }
+        });
+    });
+
+    // Highlight active section on scroll
+    function updateActiveSection() {
+        let currentSection = null;
+        const scrollTop = window.scrollY + 100;
+
+        sections.forEach(function(section) {
+            if (section.offsetTop <= scrollTop) {
+                currentSection = section;
+            }
+        });
+
+        navLinks.forEach(function(link) {
+            link.classList.remove('active');
+            if (currentSection && link.getAttribute('data-section') === currentSection.id) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    window.addEventListener('scroll', updateActiveSection);
+    updateActiveSection();
+
+    // Search functionality
+    const searchInput = document.getElementById('unified-search');
+    const searchBanner = document.getElementById('search-results-banner');
+    const searchCount = document.getElementById('search-results-count');
+    const clearSearchBtn = document.getElementById('clear-search');
+
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+    }
+
+    function performSearch(query) {
+        const trimmedQuery = query.trim().toLowerCase();
+
+        // Clear previous highlights
+        document.querySelectorAll('.search-match').forEach(function(el) {
+            const parent = el.parentNode;
+            parent.replaceChild(document.createTextNode(el.textContent), el);
+            parent.normalize();
+        });
+
+        // Remove hidden class from all sections
+        sections.forEach(function(section) {
+            section.classList.remove('search-hidden');
+        });
+
+        if (!trimmedQuery) {
+            searchBanner.classList.add('hidden');
+            // Update URL to remove search param
+            if (window.location.hash.includes('search=')) {
+                history.replaceState(null, '', window.location.pathname);
+            }
+            return;
+        }
+
+        // Update URL with search query
+        history.replaceState(null, '', window.location.pathname + '#search=' + encodeURIComponent(trimmedQuery));
+
+        let matchCount = 0;
+
+        sections.forEach(function(section) {
+            const content = section.textContent.toLowerCase();
+            if (content.includes(trimmedQuery)) {
+                matchCount++;
+                // Highlight matches in text nodes
+                highlightMatches(section, query);
+            } else {
+                section.classList.add('search-hidden');
+            }
+        });
+
+        searchBanner.classList.remove('hidden');
+        searchCount.textContent = matchCount + ' section(s) match "' + query + '"';
+
+        // Update nav links to show/hide based on visible sections
+        navLinks.forEach(function(link) {
+            const sectionId = link.getAttribute('data-section');
+            const section = document.getElementById(sectionId);
+            if (section && section.classList.contains('search-hidden')) {
+                link.style.opacity = '0.4';
+            } else {
+                link.style.opacity = '1';
+            }
+        });
+    }
+
+    function highlightMatches(element, query) {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT, null, false);
+        const nodesToReplace = [];
+
+        while (walker.nextNode()) {
+            const node = walker.currentNode;
+            if (node.nodeValue.toLowerCase().includes(query.toLowerCase())) {
+                nodesToReplace.push(node);
+            }
+        }
+
+        nodesToReplace.forEach(function(node) {
+            const text = node.nodeValue;
+            const regex = new RegExp('(' + escapeRegex(query) + ')', 'gi');
+            const parts = text.split(regex);
+
+            if (parts.length > 1) {
+                const span = document.createElement('span');
+                parts.forEach(function(part) {
+                    if (part.toLowerCase() === query.toLowerCase()) {
+                        const mark = document.createElement('mark');
+                        mark.className = 'search-match';
+                        mark.textContent = part;
+                        span.appendChild(mark);
+                    } else {
+                        span.appendChild(document.createTextNode(part));
+                    }
+                });
+                node.parentNode.replaceChild(span, node);
+            }
+        });
+    }
+
+    if (searchInput) {
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(function() {
+                performSearch(searchInput.value);
+            }, 300);
+        });
+
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                performSearch('');
+            }
+        });
+    }
+
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', function() {
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            performSearch('');
+        });
+    }
+
+    // Check for search query in URL on page load
+    if (window.location.hash.startsWith('#search=')) {
+        const query = decodeURIComponent(window.location.hash.substring(8));
+        if (query && searchInput) {
+            searchInput.value = query;
+            performSearch(query);
+        }
+    }
+
+    // Keyboard shortcut for search (Ctrl/Cmd + K)
+    document.addEventListener('keydown', function(e) {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            if (searchInput) {
+                searchInput.focus();
+                searchInput.select();
+            }
+        }
+    });
+
+    // Message navigation (prev/next buttons)
+    const messageWrappers = document.querySelectorAll('.message-wrapper');
+    const wrappersArray = Array.from(messageWrappers);
+
+    wrappersArray.forEach(function(wrapper, index) {
+        const prevBtn = wrapper.querySelector('.prev-btn');
+        const nextBtn = wrapper.querySelector('.next-btn');
+
+        if (prevBtn) {
+            if (index === 0) {
+                prevBtn.disabled = true;
+            } else {
+                prevBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const prevWrapper = wrappersArray[index - 1];
+                    if (prevWrapper) {
+                        prevWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+            }
+        }
+
+        if (nextBtn) {
+            if (index === wrappersArray.length - 1) {
+                nextBtn.disabled = true;
+            } else {
+                nextBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const nextWrapper = wrappersArray[index + 1];
+                    if (nextWrapper) {
+                        nextWrapper.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }
+                });
+            }
+        }
+    });
+
+    // Keyboard navigation for messages (j/k like vim)
+    document.addEventListener('keydown', function(e) {
+        // Skip if focused on input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        const scrollTop = window.scrollY + 100;
+        let currentIndex = -1;
+
+        // Find current message
+        wrappersArray.forEach(function(wrapper, index) {
+            if (wrapper.offsetTop <= scrollTop) {
+                currentIndex = index;
+            }
+        });
+
+        if (e.key === 'j' || e.key === 'J') {
+            // Next message
+            e.preventDefault();
+            const nextIndex = Math.min(currentIndex + 1, wrappersArray.length - 1);
+            if (wrappersArray[nextIndex]) {
+                wrappersArray[nextIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        } else if (e.key === 'k' || e.key === 'K') {
+            // Previous message
+            e.preventDefault();
+            const prevIndex = Math.max(currentIndex - 1, 0);
+            if (wrappersArray[prevIndex]) {
+                wrappersArray[prevIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+    });
+
+    // Message type filter functionality
+    const filterToggles = document.querySelectorAll('.filter-toggle');
+    const filters = { user: true, assistant: true, tool: true };
+
+    function applyFilters() {
+        document.querySelectorAll('.message-wrapper').forEach(function(wrapper) {
+            const message = wrapper.querySelector('.message');
+            if (!message) return;
+
+            let messageType = null;
+            if (message.classList.contains('user')) messageType = 'user';
+            else if (message.classList.contains('assistant')) messageType = 'assistant';
+            else if (message.classList.contains('tool-reply')) messageType = 'tool';
+
+            if (messageType && !filters[messageType]) {
+                wrapper.style.display = 'none';
+            } else {
+                wrapper.style.display = '';
+            }
+        });
+    }
+
+    filterToggles.forEach(function(toggle) {
+        toggle.addEventListener('click', function() {
+            const filterType = toggle.getAttribute('data-filter');
+            filters[filterType] = !filters[filterType];
+            toggle.classList.toggle('active', filters[filterType]);
+            applyFilters();
+        });
+    });
+
+    // Search clear button functionality
+    const searchClearBtn = document.getElementById('search-clear-btn');
+    if (searchClearBtn && searchInput) {
+        searchInput.addEventListener('input', function() {
+            if (searchInput.value) {
+                searchClearBtn.classList.add('visible');
+            } else {
+                searchClearBtn.classList.remove('visible');
+            }
+        });
+
+        searchClearBtn.addEventListener('click', function() {
+            searchInput.value = '';
+            searchClearBtn.classList.remove('visible');
+            // Clear search without scrolling
+            document.querySelectorAll('.search-match').forEach(function(el) {
+                const parent = el.parentNode;
+                parent.replaceChild(document.createTextNode(el.textContent), el);
+                parent.normalize();
+            });
+            sections.forEach(function(section) {
+                section.classList.remove('search-hidden');
+            });
+            searchBanner.classList.add('hidden');
+            // Reset nav links opacity
+            navLinks.forEach(function(link) {
+                link.style.opacity = '1';
+            });
+            // Update URL without scrolling
+            if (window.location.hash.includes('search=')) {
+                history.replaceState(null, '', window.location.pathname + window.location.hash.split('#search=')[0]);
+            }
+        });
+    }
+
+    // Copy button functionality for code blocks
+    document.querySelectorAll('pre').forEach(function(pre) {
+        // Skip if already wrapped
+        if (pre.parentElement.classList.contains('code-block-wrapper')) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'code-block-wrapper';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'copy-btn';
+        copyBtn.textContent = 'Copy';
+        copyBtn.setAttribute('aria-label', 'Copy code to clipboard');
+
+        copyBtn.addEventListener('click', function() {
+            const code = pre.textContent;
+            navigator.clipboard.writeText(code).then(function() {
+                copyBtn.textContent = 'Copied!';
+                copyBtn.classList.add('copied');
+                setTimeout(function() {
+                    copyBtn.textContent = 'Copy';
+                    copyBtn.classList.remove('copied');
+                }, 2000);
+            }).catch(function(err) {
+                console.error('Failed to copy:', err);
+                copyBtn.textContent = 'Failed';
+                setTimeout(function() {
+                    copyBtn.textContent = 'Copy';
+                }, 2000);
+            });
+        });
+
+        pre.parentNode.insertBefore(wrapper, pre);
+        wrapper.appendChild(pre);
+        wrapper.appendChild(copyBtn);
+    });
+})();
+"""
+
 
 def inject_gist_preview_js(output_dir):
     """Inject gist preview JavaScript into all HTML files in the output directory."""
@@ -1376,6 +2707,209 @@ def generate_html(json_path, output_dir, github_repo=None):
     )
 
 
+def wrap_message_with_nav(msg_html):
+    """Wrap a message HTML with prev/next navigation buttons."""
+    if not msg_html or not msg_html.strip():
+        return ""
+    prev_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>'
+    next_svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>'
+    return f'<div class="message-wrapper"><button class="msg-nav-btn prev-btn" aria-label="Previous message">{prev_svg}</button>{msg_html}<button class="msg-nav-btn next-btn" aria-label="Next message">{next_svg}</button></div>'
+
+
+def render_user_message_content_unified(message_data):
+    """Render user message content for unified view, separating system info from user input."""
+    content = message_data.get("content", "")
+    if isinstance(content, str):
+        # Check for system info patterns like <ide_opened_file>...</ide_opened_file>
+        system_info_pattern = re.compile(
+            r"<(ide_opened_file|system_reminder|context_info)>(.*?)</\1>", re.DOTALL
+        )
+        matches = system_info_pattern.findall(content)
+        system_parts = []
+        user_content = content
+
+        for tag_name, tag_content in matches:
+            full_tag = f"<{tag_name}>{tag_content}</{tag_name}>"
+            user_content = user_content.replace(full_tag, "").strip()
+            label = tag_name.replace("_", " ").title()
+            system_parts.append(
+                f'<div class="system-info"><div class="system-info-label">{label}</div><p>{html.escape(tag_content.strip())}</p></div>'
+            )
+
+        result = ""
+        if system_parts:
+            result += "".join(system_parts)
+
+        if user_content:
+            if is_json_like(user_content):
+                result += _macros.user_content(format_json(user_content))
+            else:
+                result += _macros.user_content(render_markdown_text(user_content))
+
+        return result if result else _macros.user_content("")
+    elif isinstance(content, list):
+        return "".join(render_content_block(block) for block in content)
+    return f"<p>{html.escape(str(content))}</p>"
+
+
+def render_message_unified(log_type, message_json, timestamp):
+    """Render a message for the unified view with system info separation."""
+    if not message_json:
+        return ""
+    try:
+        message_data = json.loads(message_json)
+    except json.JSONDecodeError:
+        return ""
+    if log_type == "user":
+        content_html = render_user_message_content_unified(message_data)
+        # Check if this is a tool result message
+        if is_tool_result_message(message_data):
+            role_class, role_label = "tool-reply", "Tool reply"
+        else:
+            role_class, role_label = "user", "User"
+    elif log_type == "assistant":
+        content_html = render_assistant_message(message_data)
+        role_class, role_label = "assistant", "Assistant"
+    else:
+        return ""
+    if not content_html.strip():
+        return ""
+    msg_id = make_msg_id(timestamp)
+    return _macros.message(role_class, role_label, msg_id, timestamp, content_html)
+
+
+def generate_unified_html(json_path, output_dir, github_repo=None):
+    """Generate a single unified HTML page with all conversations.
+
+    Creates a modern single-page UI with:
+    - Sidebar navigation with links to each prompt
+    - In-page search functionality
+    - All messages rendered in a single scrollable page
+
+    Args:
+        json_path: Path to the session JSON/JSONL file
+        output_dir: Directory to write the unified.html file
+        github_repo: Optional GitHub repo (owner/name) for commit links
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True)
+
+    # Load session file (supports both JSON and JSONL)
+    data = parse_session_file(json_path)
+    loglines = data.get("loglines", [])
+
+    # Auto-detect GitHub repo if not provided
+    if github_repo is None:
+        github_repo = detect_github_repo(loglines)
+        if github_repo:
+            print(f"Auto-detected GitHub repo: {github_repo}")
+
+    # Set module-level variable for render functions
+    global _github_repo
+    _github_repo = github_repo
+
+    # Group messages into conversations
+    conversations = []
+    current_conv = None
+    for entry in loglines:
+        log_type = entry.get("type")
+        timestamp = entry.get("timestamp", "")
+        is_compact_summary = entry.get("isCompactSummary", False)
+        message_data = entry.get("message", {})
+        if not message_data:
+            continue
+        message_json = json.dumps(message_data)
+        is_user_prompt = False
+        user_text = None
+        if log_type == "user":
+            content = message_data.get("content", "")
+            text = extract_text_from_content(content)
+            if text:
+                is_user_prompt = True
+                user_text = text
+        if is_user_prompt:
+            if current_conv:
+                conversations.append(current_conv)
+            current_conv = {
+                "user_text": user_text,
+                "timestamp": timestamp,
+                "messages": [(log_type, message_json, timestamp)],
+                "is_continuation": bool(is_compact_summary),
+            }
+        elif current_conv:
+            current_conv["messages"].append((log_type, message_json, timestamp))
+    if current_conv:
+        conversations.append(current_conv)
+
+    # Build navigation items and sections
+    nav_items = []
+    sections = []
+    total_messages = 0
+    total_tool_counts = {}
+
+    prompt_num = 0
+    for conv in conversations:
+        # Skip continuations for nav items (but still render them)
+        if conv.get("is_continuation"):
+            continue
+        if conv["user_text"].startswith("Stop hook feedback:"):
+            continue
+
+        prompt_num += 1
+        total_messages += len(conv["messages"])
+
+        # Analyze for tool counts
+        stats = analyze_conversation(conv["messages"])
+        for tool, count in stats["tool_counts"].items():
+            total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
+
+        # Create navigation item
+        preview_text = conv["user_text"][:60]
+        if len(conv["user_text"]) > 60:
+            preview_text += "..."
+        nav_items.append(
+            {
+                "num": prompt_num,
+                "preview": preview_text,
+                "timestamp": conv["timestamp"],
+            }
+        )
+
+        # Render messages for this section with navigation buttons
+        messages_html = []
+        for log_type, message_json, timestamp in conv["messages"]:
+            msg_html = render_message_unified(log_type, message_json, timestamp)
+            if msg_html:
+                wrapped_msg = wrap_message_with_nav(msg_html)
+                messages_html.append(wrapped_msg)
+
+        sections.append(
+            {
+                "num": prompt_num,
+                "timestamp": conv["timestamp"],
+                "content": "".join(messages_html),
+            }
+        )
+
+    total_tool_calls = sum(total_tool_counts.values())
+
+    # Render the unified template
+    unified_template = get_template("unified.html")
+    unified_content = unified_template.render(
+        unified_css=UNIFIED_CSS,
+        unified_js=UNIFIED_JS,
+        nav_items=nav_items,
+        sections=sections,
+        prompt_count=prompt_num,
+        message_count=total_messages,
+        tool_count=total_tool_calls,
+    )
+
+    unified_path = output_dir / "unified.html"
+    unified_path.write_text(unified_content, encoding="utf-8")
+    print(f"Generated {unified_path.resolve()} ({prompt_num} prompts, unified view)")
+
+
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
 def cli():
@@ -1422,7 +2956,15 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--new-ui",
+    "new_ui",
+    is_flag=True,
+    help="Generate a modern unified single-page UI with sidebar navigation and search.",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, new_ui
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1473,7 +3015,13 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
+
+    if new_ui:
+        generate_unified_html(session_file, output, github_repo=repo)
+        output_file = "unified.html"
+    else:
+        generate_html(session_file, output, github_repo=repo)
+        output_file = "index.html"
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1491,13 +3039,13 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/{output_file}"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
     if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        file_url = (output / output_file).resolve().as_uri()
+        webbrowser.open(file_url)
 
 
 def is_url(path):
@@ -1574,7 +3122,15 @@ def fetch_url_to_tempfile(url):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
+@click.option(
+    "--new-ui",
+    "new_ui",
+    is_flag=True,
+    help="Generate a modern unified single-page UI with sidebar navigation and search.",
+)
+def json_cmd(
+    json_file, output, output_auto, repo, gist, include_json, open_browser, new_ui
+):
     """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
@@ -1604,7 +3160,13 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         )
 
     output = Path(output)
-    generate_html(json_file_path, output, github_repo=repo)
+
+    if new_ui:
+        generate_unified_html(json_file_path, output, github_repo=repo)
+        output_file = "unified.html"
+    else:
+        generate_html(json_file_path, output, github_repo=repo)
+        output_file = "index.html"
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1622,13 +3184,13 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
         gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+        preview_url = f"https://gisthost.github.io/?{gist_id}/{output_file}"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
 
     if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        file_url = (output / output_file).resolve().as_uri()
+        webbrowser.open(file_url)
 
 
 def resolve_credentials(token, org_uuid):

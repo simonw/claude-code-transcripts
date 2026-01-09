@@ -51,10 +51,32 @@ All commands support these options:
 - `--open` - open the generated `index.html` in your default browser (default if no `-o` specified)
 - `--gist` - upload the generated HTML files to a GitHub Gist and output a preview URL
 - `--json` - include the original session file in the output directory
+- `--new-ui` - generate a modern unified single-page UI (see below)
 
 The generated output includes:
 - `index.html` - an index page with a timeline of prompts and commits
 - `page-001.html`, `page-002.html`, etc. - paginated transcript pages
+
+### Modern Unified UI (--new-ui)
+
+Use the `--new-ui` flag to generate a modern single-page transcript view with enhanced navigation:
+
+```bash
+claude-code-transcripts --new-ui
+claude-code-transcripts json session.json --new-ui
+claude-code-transcripts local --new-ui
+```
+
+The unified UI includes:
+
+- **Sidebar Navigation**: A fixed sidebar showing all prompts with preview text, allowing quick navigation to any section
+- **In-Page Search**: Real-time search functionality (Ctrl/Cmd+K) that filters sections and highlights matches
+- **Single Page View**: All conversations on one scrollable page with smooth scrolling
+- **Active Section Tracking**: The sidebar highlights the current section as you scroll
+- **Responsive Design**: Sidebar collapses on mobile with a toggle button
+- **URL State**: Search queries are preserved in the URL hash for sharing
+
+This generates a single `unified.html` file instead of multiple paginated pages.
 
 ### Local sessions
 
