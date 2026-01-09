@@ -556,9 +556,227 @@ def parse_session_file(filepath):
     if filepath.suffix == ".jsonl":
         return _parse_jsonl_file(filepath)
     else:
-        # Standard JSON format
+        # Standard JSON format (plus Kiro save/export JSON)
         with open(filepath, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if _is_kiro_export_data(data):
+            return _parse_kiro_export_data(data)
+        return data
+
+
+def _is_kiro_export_data(data):
+    """Detect Kiro (Kiro CLI /save, Amazon Q CLI /save) JSON exports.
+
+    These exports serialize a conversation state with a top-level `history` array of
+    `{ user: ..., assistant: ... }` pairs. User content is stored as a tagged enum
+    like `{ "Prompt": "..." }` or `{ "ToolUseResults": [...] }`.
+    """
+    if not isinstance(data, dict):
+        return False
+    history = data.get("history")
+    if not isinstance(history, list) or not history:
+        return False
+
+    # Presence of an ID is a helpful marker, but not required.
+    if not any(k in data for k in ("conversation_id", "conversationId")):
+        # Many other things can have a "history" list; require stronger evidence.
+        pass
+
+    # Validate a handful of entries for shape.
+    checked = 0
+    for entry in history[:5]:
+        if not isinstance(entry, dict):
+            return False
+        user = entry.get("user")
+        assistant = entry.get("assistant")
+        if not isinstance(user, dict) or not isinstance(assistant, dict):
+            return False
+        content = user.get("content")
+        if not isinstance(content, dict) or not content:
+            return False
+        if not any(
+            k in content for k in ("Prompt", "ToolUseResults", "CancelledToolUses")
+        ):
+            return False
+        if not any(k in assistant for k in ("Response", "ToolUse")):
+            return False
+        checked += 1
+    return checked > 0
+
+
+def _parse_kiro_export_data(data):
+    """Parse Kiro save/export JSON and normalize to Claude Code-style loglines."""
+    loglines = []
+    history = data.get("history", [])
+    if not isinstance(history, list):
+        return {"loglines": []}
+
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+
+        user = entry.get("user") or {}
+        assistant = entry.get("assistant") or {}
+        timestamp = ""
+        if isinstance(user, dict):
+            timestamp = user.get("timestamp", "") or ""
+
+        user_message = _convert_kiro_user_message(user)
+        if user_message is not None:
+            loglines.append(
+                {
+                    "type": "user",
+                    "timestamp": timestamp,
+                    "message": user_message,
+                }
+            )
+
+        assistant_message = _convert_kiro_assistant_message(assistant)
+        if assistant_message is not None:
+            loglines.append(
+                {
+                    "type": "assistant",
+                    "timestamp": timestamp,
+                    "message": assistant_message,
+                }
+            )
+
+    return {"loglines": loglines}
+
+
+def _convert_kiro_user_message(user):
+    if not isinstance(user, dict):
+        return None
+
+    content = user.get("content")
+    if not isinstance(content, dict):
+        return None
+
+    if "Prompt" in content:
+        prompt = content.get("Prompt")
+        if prompt is None:
+            prompt = ""
+        return {"role": "user", "content": str(prompt)}
+
+    # Tool results (and cancellations) are represented as a special user content type.
+    tool_use_results = None
+    if "ToolUseResults" in content:
+        tool_use_results = content.get("ToolUseResults")
+    elif "CancelledToolUses" in content:
+        cancelled = content.get("CancelledToolUses")
+        if isinstance(cancelled, dict):
+            tool_use_results = cancelled.get("tool_use_results")
+            prompt = cancelled.get("prompt")
+            if prompt:
+                # Preserve any prompt text that came along with the cancellation.
+                # Keep this as plain user content rather than mixing with tool_result blocks.
+                return {"role": "user", "content": str(prompt)}
+
+    if isinstance(tool_use_results, list):
+        blocks = []
+        for result in tool_use_results:
+            block = _convert_kiro_tool_use_result(result)
+            if block is not None:
+                blocks.append(block)
+        return {"role": "user", "content": blocks}
+
+    return None
+
+
+def _convert_kiro_tool_use_result(result):
+    if not isinstance(result, dict):
+        return None
+    tool_use_id = result.get("tool_use_id") or result.get("toolUseId") or ""
+    status = result.get("status")
+    is_error = False
+    if isinstance(status, str):
+        is_error = status.lower() not in ("success", "ok")
+    content = _convert_kiro_tool_result_content(result.get("content"))
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": content,
+        "is_error": is_error,
+    }
+
+
+def _convert_kiro_tool_result_content(content):
+    # Kiro/Q CLI serializes tool result content as a list of tagged blocks:
+    #   [{"Text": "..."}, {"Json": {...}}]
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if not isinstance(content, list):
+        return content
+
+    text_parts = []
+    json_parts = []
+    for block in content:
+        if not isinstance(block, dict) or not block:
+            continue
+        if "Text" in block:
+            text_parts.append(str(block.get("Text", "")))
+        elif "Json" in block:
+            json_parts.append(block.get("Json"))
+
+    if text_parts and not json_parts:
+        return "\n".join(text_parts).strip("\n")
+    if len(json_parts) == 1 and not text_parts:
+        return json_parts[0]
+
+    merged_parts = []
+    if text_parts:
+        merged_parts.append("\n".join(text_parts).strip("\n"))
+    for jp in json_parts:
+        try:
+            merged_parts.append(json.dumps(jp, indent=2, ensure_ascii=False))
+        except TypeError:
+            merged_parts.append(str(jp))
+    return "\n\n".join(p for p in merged_parts if p)
+
+
+def _convert_kiro_assistant_message(assistant):
+    if not isinstance(assistant, dict) or not assistant:
+        return None
+
+    if "Response" in assistant:
+        response = assistant.get("Response") or {}
+        if not isinstance(response, dict):
+            return None
+        text = response.get("content", "")
+        return {
+            "role": "assistant",
+            "content": [{"type": "text", "text": str(text)}],
+        }
+
+    if "ToolUse" in assistant:
+        tool_use = assistant.get("ToolUse") or {}
+        if not isinstance(tool_use, dict):
+            return None
+
+        blocks = []
+        text = tool_use.get("content")
+        if text:
+            blocks.append({"type": "text", "text": str(text)})
+
+        tool_uses = tool_use.get("tool_uses")
+        if isinstance(tool_uses, list):
+            for tu in tool_uses:
+                if not isinstance(tu, dict):
+                    continue
+                blocks.append(
+                    {
+                        "type": "tool_use",
+                        "id": tu.get("id", ""),
+                        "name": tu.get("name") or tu.get("orig_name") or "Unknown tool",
+                        "input": tu.get("args") or {},
+                    }
+                )
+
+        return {"role": "assistant", "content": blocks}
+
+    return None
 
 
 def _is_codex_cli_format(filepath):
