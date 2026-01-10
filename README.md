@@ -29,7 +29,7 @@ This tool converts Claude Code and Codex CLI session files into browseable multi
 **Supported formats:**
 - Claude Code session files (JSONL format from `~/.claude/projects`)
 - Codex CLI session files (JSONL format from `~/.codex/sessions`) - automatically detected and converted
-- Windsurf chat export files (JSON) - automatically detected and converted
+
 
 There are four commands available:
 
@@ -60,6 +60,8 @@ All commands support these options:
 The generated output includes:
 - `index.html` - an index page with a timeline of prompts and commits
 - `page-001.html`, `page-002.html`, etc. - paginated transcript pages
+
+Transcript pages include a left sidebar with filter toggles (user/assistant/tools/tool results/thinking) and an in-page outline of turns. Filter settings persist across pages using `localStorage`.
 
 ### Local sessions
 
@@ -159,6 +161,14 @@ claude-code-transcripts json session.jsonl --open
 This works with both JSONL files in the `~/.claude/projects/` folder and JSON session files extracted from Claude Code for web.
 
 The `json` command can take a URL to a JSON or JSONL file as an alternative to a path on disk.
+
+### Antigravity exports
+
+This tool supports Antigravity conversation export JSON files. Export a conversation from Antigravity as JSON, then run:
+
+```bash
+claude-code-transcripts json path/to/export.json
+```
 
 ### Converting all sessions
 
