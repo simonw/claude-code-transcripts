@@ -1093,6 +1093,16 @@ class TestParseSessionFile:
         assert "hello world" in index_html.lower()
         assert index_html == snapshot_html
 
+    def test_codex_jsonl_generates_html(self, output_dir, snapshot_html):
+        """Test that Codex CLI JSONL reasoning renders as thinking blocks."""
+        fixture_path = Path(__file__).parent / "sample_codex_session.jsonl"
+        generate_html(fixture_path, output_dir)
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert "thinking" in page_html.lower()
+        assert "include a minimal example" in page_html.lower()
+        assert page_html == snapshot_html
+
 
 class TestGetSessionSummary:
     """Tests for get_session_summary which extracts summary from session files."""
