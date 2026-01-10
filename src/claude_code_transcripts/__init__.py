@@ -855,6 +855,15 @@ def _convert_codex_content_to_claude(content_blocks):
         block_type = block.get("type")
         if block_type == "input_text":
             claude_blocks.append({"type": "text", "text": block.get("text", "")})
+        elif block_type == "reasoning":
+            reasoning_text = (
+                block.get("text")
+                or block.get("reasoning")
+                or block.get("content")
+                or ""
+            )
+            if reasoning_text:
+                claude_blocks.append({"type": "thinking", "thinking": reasoning_text})
         elif block_type == "output_text":
             claude_blocks.append({"type": "text", "text": block.get("text", "")})
         elif block_type == "text":
@@ -932,6 +941,20 @@ def _parse_codex_jsonl_file(filepath):
             }
         )
 
+    def add_thinking(thinking, timestamp):
+        if not thinking:
+            return
+        loglines.append(
+            {
+                "type": "assistant",
+                "timestamp": timestamp,
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "thinking", "thinking": thinking}],
+                },
+            }
+        )
+
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -966,6 +989,14 @@ def _parse_codex_jsonl_file(filepath):
                             timestamp,
                             bool(payload.get("is_error")),
                         )
+                    elif payload_type == "reasoning":
+                        add_thinking(
+                            payload.get("text")
+                            or payload.get("reasoning")
+                            or payload.get("content")
+                            or "",
+                            timestamp,
+                        )
                 elif record_type == "message":
                     add_message(
                         obj.get("role"),
@@ -987,6 +1018,14 @@ def _parse_codex_jsonl_file(filepath):
                         obj.get("output", ""),
                         timestamp,
                         bool(obj.get("is_error")),
+                    )
+                elif record_type == "reasoning":
+                    add_thinking(
+                        obj.get("text")
+                        or obj.get("reasoning")
+                        or obj.get("content")
+                        or "",
+                        timestamp,
                     )
 
             except json.JSONDecodeError:
@@ -1391,6 +1430,97 @@ def is_tool_result_message(message_data):
     )
 
 
+def _normalize_preview_text(text):
+    if not isinstance(text, str):
+        return ""
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _truncate_preview_text(text, max_length):
+    text = _normalize_preview_text(text)
+    if not text:
+        return ""
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 1].rstrip() + "…"
+
+
+def extract_assistant_preview(messages, max_length=140):
+    """Extract a short assistant preview from a list of (type, json, timestamp)."""
+    for log_type, message_json, _timestamp in messages:
+        if log_type != "assistant" or not message_json:
+            continue
+        try:
+            message_data = json.loads(message_json)
+        except json.JSONDecodeError:
+            continue
+        text = extract_text_from_content(message_data.get("content", []))
+        preview = _truncate_preview_text(text, max_length)
+        if preview:
+            return preview
+    return ""
+
+
+def format_tool_stats_sidebar(tool_counts):
+    """Format tool counts for compact display (e.g., '3 bash · 1 write')."""
+    if not tool_counts:
+        return ""
+
+    abbrev = {
+        "Bash": "bash",
+        "Read": "read",
+        "Write": "write",
+        "Edit": "edit",
+        "Glob": "glob",
+        "Grep": "grep",
+        "Task": "task",
+        "TodoWrite": "todo",
+        "WebFetch": "fetch",
+        "WebSearch": "search",
+    }
+
+    parts = []
+    for name, count in sorted(tool_counts.items(), key=lambda x: (-x[1], x[0])):
+        short_name = abbrev.get(name, name.lower())
+        parts.append(f"{count} {short_name}")
+    return " · ".join(parts)
+
+
+def render_turn_item(
+    turn_num,
+    msg_id,
+    timestamp,
+    user_preview,
+    tool_counts,
+    assistant_preview,
+    is_continuation=False,
+):
+    """Render a single sidebar turn summary item as HTML."""
+    user_preview = _truncate_preview_text(user_preview, 120)
+    assistant_preview = _truncate_preview_text(assistant_preview, 160)
+
+    tool_total = sum(tool_counts.values()) if tool_counts else 0
+    tool_stats = format_tool_stats_sidebar(tool_counts)
+    if tool_total and tool_stats:
+        tool_line = f"{tool_total} tools: {tool_stats}"
+    else:
+        tool_line = f"{tool_total} tools"
+
+    badge_html = (
+        ' <span class="turn-badge">continuation</span>' if is_continuation else ""
+    )
+
+    return (
+        f'<a class="turn-item" href="#{html.escape(msg_id)}">'
+        f'<div class="turn-item-header"><span>Turn #{turn_num}{badge_html}</span>'
+        f'<time datetime="{html.escape(timestamp)}" data-timestamp="{html.escape(timestamp)}">{html.escape(timestamp)}</time></div>'
+        f'<div class="turn-item-user">{html.escape(user_preview)}</div>'
+        f'<div class="turn-item-meta">{html.escape(tool_line)}</div>'
+        f'<div class="turn-item-assistant">{html.escape(assistant_preview)}</div>'
+        f"</a>"
+    )
+
+
 def render_message(log_type, message_json, timestamp):
     if not message_json:
         return ""
@@ -1420,7 +1550,7 @@ CSS = """
 :root { --bg-color: #f5f5f5; --card-bg: #ffffff; --user-bg: #e3f2fd; --user-border: #1976d2; --assistant-bg: #f5f5f5; --assistant-border: #9e9e9e; --thinking-bg: #fff8e1; --thinking-border: #ffc107; --thinking-text: #666; --tool-bg: #f3e5f5; --tool-border: #9c27b0; --tool-result-bg: #e8f5e9; --tool-error-bg: #ffebee; --text-color: #212121; --text-muted: #757575; --code-bg: #263238; --code-text: #aed581; }
 * { box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 16px; line-height: 1.6; }
-.container { max-width: 800px; margin: 0 auto; }
+
 h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom: 2px solid var(--user-border); }
 .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 2px solid var(--user-border); padding-bottom: 8px; margin-bottom: 24px; }
 .header-row h1 { border-bottom: none; padding-bottom: 0; margin-bottom: 0; flex: 1; min-width: 200px; }
@@ -1552,7 +1682,8 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .search-result-page { padding: 6px 12px; background: rgba(0,0,0,0.03); font-size: 0.8rem; color: var(--text-muted); border-bottom: 1px solid rgba(0,0,0,0.06); }
 .search-result-content { padding: 12px; }
 .search-result mark { background: #fff59d; padding: 1px 2px; border-radius: 2px; }
-@media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
+@media (max-width: 900px) { body { padding-top: 60px; } .app { display: block; } .sidebar { position: fixed; left: 0; top: 0; bottom: 0; max-height: none; transform: translateX(-110%); transition: transform 150ms ease-out; z-index: 2000; border-radius: 0 12px 12px 0; } body.cc-sidebar-open .sidebar { transform: translateX(0); } .sidebar-toggle { display: flex; position: fixed; top: 12px; left: 12px; z-index: 2100; align-items: center; justify-content: center; width: 44px; height: 40px; border: 1px solid rgba(0,0,0,0.12); background: var(--card-bg); color: var(--text-color); border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer; } .sidebar-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 1900; } body.cc-sidebar-open .sidebar-backdrop { display: block; } }
+@media (max-width: 600px) { body { padding: 8px; padding-top: 60px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
 """
 
 JS = """
@@ -1584,6 +1715,7 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
         });
     }
 });
+
 """
 
 # JavaScript to fix relative URLs when served via gisthost.github.io or gistpreview.github.io
@@ -1804,6 +1936,22 @@ def generate_html(json_path, output_dir, github_repo=None):
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
         messages_html = []
+        turn_items_html = []
+        for conv_offset, conv in enumerate(page_convs):
+            stats = analyze_conversation(conv["messages"])
+            assistant_preview = extract_assistant_preview(conv["messages"])
+            msg_id = make_msg_id(conv["timestamp"])
+            turn_items_html.append(
+                render_turn_item(
+                    start_idx + conv_offset + 1,
+                    msg_id,
+                    conv["timestamp"],
+                    conv["user_text"],
+                    stats["tool_counts"],
+                    assistant_preview,
+                    is_continuation=bool(conv.get("is_continuation")),
+                )
+            )
         for conv in page_convs:
             is_first = True
             for log_type, message_json, timestamp in conv["messages"]:
@@ -1823,6 +1971,7 @@ def generate_html(json_path, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            turns_html="".join(turn_items_html),
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
@@ -2278,6 +2427,22 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
         messages_html = []
+        turn_items_html = []
+        for conv_offset, conv in enumerate(page_convs):
+            stats = analyze_conversation(conv["messages"])
+            assistant_preview = extract_assistant_preview(conv["messages"])
+            msg_id = make_msg_id(conv["timestamp"])
+            turn_items_html.append(
+                render_turn_item(
+                    start_idx + conv_offset + 1,
+                    msg_id,
+                    conv["timestamp"],
+                    conv["user_text"],
+                    stats["tool_counts"],
+                    assistant_preview,
+                    is_continuation=bool(conv.get("is_continuation")),
+                )
+            )
         for conv in page_convs:
             is_first = True
             for log_type, message_json, timestamp in conv["messages"]:
@@ -2297,6 +2462,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             total_pages=total_pages,
             pagination_html=pagination_html,
             messages_html="".join(messages_html),
+            turns_html="".join(turn_items_html),
         )
         (output_dir / f"page-{page_num:03d}.html").write_text(
             page_content, encoding="utf-8"
