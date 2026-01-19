@@ -353,7 +353,15 @@ def generate_batch_html(
             # Generate transcript HTML with error handling
             try:
                 if new_ui:
-                    generate_unified_html(session["path"], session_dir)
+                    # Pass breadcrumb navigation info for archive context
+                    breadcrumbs = {
+                        "archive_url": "../../index.html",
+                        "project_url": "../index.html",
+                        "project_name": project["name"],
+                    }
+                    generate_unified_html(
+                        session["path"], session_dir, breadcrumbs=breadcrumbs
+                    )
                 else:
                     generate_html(session["path"], session_dir)
                 successful_sessions += 1
@@ -375,10 +383,10 @@ def generate_batch_html(
                 )
 
         # Generate project index
-        _generate_project_index(project, project_dir)
+        _generate_project_index(project, project_dir, new_ui=new_ui)
 
     # Generate master index
-    _generate_master_index(projects, output_dir)
+    _generate_master_index(projects, output_dir, new_ui=new_ui)
 
     return {
         "total_projects": len(projects),
@@ -388,9 +396,16 @@ def generate_batch_html(
     }
 
 
-def _generate_project_index(project, output_dir):
-    """Generate index.html for a single project."""
-    template = get_template("project_index.html")
+def _generate_project_index(project, output_dir, new_ui=False):
+    """Generate index.html for a single project.
+
+    Args:
+        project: Project dict with name, path, sessions
+        output_dir: Directory to write index.html
+        new_ui: Whether to use the unified dark theme template
+    """
+    template_name = "project_index_unified.html" if new_ui else "project_index.html"
+    template = get_template(template_name)
 
     # Format sessions for template
     sessions_data = []
@@ -405,21 +420,36 @@ def _generate_project_index(project, output_dir):
             }
         )
 
-    html_content = template.render(
-        project_name=project["name"],
-        sessions=sessions_data,
-        session_count=len(sessions_data),
-        css=CSS,
-        js=JS,
-    )
+    if new_ui:
+        # Unified template uses standalone CSS
+        html_content = template.render(
+            project_name=project["name"],
+            sessions=sessions_data,
+            session_count=len(sessions_data),
+        )
+    else:
+        html_content = template.render(
+            project_name=project["name"],
+            sessions=sessions_data,
+            session_count=len(sessions_data),
+            css=CSS,
+            js=JS,
+        )
 
     output_path = output_dir / "index.html"
     output_path.write_text(html_content, encoding="utf-8")
 
 
-def _generate_master_index(projects, output_dir):
-    """Generate master index.html listing all projects."""
-    template = get_template("master_index.html")
+def _generate_master_index(projects, output_dir, new_ui=False):
+    """Generate master index.html listing all projects.
+
+    Args:
+        projects: List of project dicts
+        output_dir: Directory to write index.html
+        new_ui: Whether to use the unified dark theme template
+    """
+    template_name = "master_index_unified.html" if new_ui else "master_index.html"
+    template = get_template(template_name)
 
     # Format projects for template
     projects_data = []
@@ -444,13 +474,21 @@ def _generate_master_index(projects, output_dir):
             }
         )
 
-    html_content = template.render(
-        projects=projects_data,
-        total_projects=len(projects),
-        total_sessions=total_sessions,
-        css=CSS,
-        js=JS,
-    )
+    if new_ui:
+        # Unified template uses standalone CSS
+        html_content = template.render(
+            projects=projects_data,
+            total_projects=len(projects),
+            total_sessions=total_sessions,
+        )
+    else:
+        html_content = template.render(
+            projects=projects_data,
+            total_projects=len(projects),
+            total_sessions=total_sessions,
+            css=CSS,
+            js=JS,
+        )
 
     output_path = output_dir / "index.html"
     output_path.write_text(html_content, encoding="utf-8")
@@ -1416,6 +1454,30 @@ body {
 .header-stats {
     margin: 4px 0 0;
     font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+/* Breadcrumb navigation */
+.breadcrumb {
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+}
+
+.breadcrumb a {
+    color: var(--sidebar-active);
+    text-decoration: none;
+}
+
+.breadcrumb a:hover {
+    text-decoration: underline;
+}
+
+.breadcrumb-sep {
+    color: var(--text-muted);
+    margin: 0 8px;
+}
+
+.breadcrumb-current {
     color: var(--text-muted);
 }
 
@@ -2836,7 +2898,7 @@ def render_message_unified(log_type, message_json, timestamp):
     return _macros.message(role_class, role_label, msg_id, timestamp, content_html)
 
 
-def generate_unified_html(json_path, output_dir, github_repo=None):
+def generate_unified_html(json_path, output_dir, github_repo=None, breadcrumbs=None):
     """Generate a single unified HTML page with all conversations.
 
     Creates a modern single-page UI with:
@@ -2848,6 +2910,10 @@ def generate_unified_html(json_path, output_dir, github_repo=None):
         json_path: Path to the session JSON/JSONL file
         output_dir: Directory to write the unified.html file
         github_repo: Optional GitHub repo (owner/name) for commit links
+        breadcrumbs: Optional dict with archive navigation info:
+            - archive_url: URL to the archive root (e.g., "../../index.html")
+            - project_url: URL to the project index (e.g., "../index.html")
+            - project_name: Name of the project for display
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
@@ -2969,6 +3035,7 @@ def generate_unified_html(json_path, output_dir, github_repo=None):
         prompt_count=prompt_num,
         message_count=total_messages,
         tool_count=total_tool_calls,
+        breadcrumbs=breadcrumbs,
     )
 
     unified_path = output_dir / "unified.html"
