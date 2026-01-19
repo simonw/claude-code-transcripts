@@ -465,6 +465,92 @@ class TestAllCommandNewUi:
                     if session_dir.is_dir():
                         assert (session_dir / "unified.html").exists()
 
+    def test_master_index_has_dark_theme_with_new_ui(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that master index uses dark theme when --new-ui is passed."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        index_html = (output_dir / "index.html").read_text()
+        # Should have dark theme CSS variables from UNIFIED_CSS
+        assert "--bg-color: #0f172a" in index_html
+        assert "--sidebar-bg: #1e293b" in index_html
+        assert "--text-color: #e2e8f0" in index_html
+
+    def test_project_index_has_dark_theme_with_new_ui(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that project index uses dark theme when --new-ui is passed."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        project_index_html = (output_dir / "project-a" / "index.html").read_text()
+        # Should have dark theme CSS variables
+        assert "--bg-color: #0f172a" in project_index_html
+        assert "--text-color: #e2e8f0" in project_index_html
+
+    def test_project_index_links_to_unified_html_with_new_ui(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that project index links to unified.html instead of index.html."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        project_index_html = (output_dir / "project-a" / "index.html").read_text()
+        # Links should point to unified.html
+        assert "unified.html" in project_index_html
+        # Should NOT link to session index.html
+        assert (
+            "/index.html" not in project_index_html
+            or "../index.html" in project_index_html
+        )
+
+    def test_unified_html_has_breadcrumb_navigation(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that unified.html has breadcrumbs to navigate back to project and archive."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        # Find a unified.html file
+        project_a_dir = output_dir / "project-a"
+        session_dirs = [d for d in project_a_dir.iterdir() if d.is_dir()]
+        unified_html = (session_dirs[0] / "unified.html").read_text()
+
+        # Should have breadcrumb navigation
+        assert "breadcrumb" in unified_html.lower() or "nav" in unified_html.lower()
+        # Should have link back to project index
+        assert "../index.html" in unified_html
+        # Should have link back to archive root
+        assert "../../index.html" in unified_html
+
+    def test_master_index_shows_project_links_with_new_ui(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that master index links to project folders properly."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        index_html = (output_dir / "index.html").read_text()
+        # Should have links to project folders
+        assert "project-a/index.html" in index_html
+        assert "project-b/index.html" in index_html
+
+    def test_archive_navigation_is_seamless(self, mock_projects_dir, output_dir):
+        """Test full archive navigation: archive -> project -> session and back."""
+        generate_batch_html(mock_projects_dir, output_dir, new_ui=True)
+
+        # Master index should link to projects
+        master_html = (output_dir / "index.html").read_text()
+        assert "project-a/index.html" in master_html
+
+        # Project index should link to sessions and back to archive
+        project_html = (output_dir / "project-a" / "index.html").read_text()
+        assert "unified.html" in project_html
+        assert "../index.html" in project_html  # Back to archive
+
+        # Session should link back to project and archive
+        session_dirs = [d for d in (output_dir / "project-a").iterdir() if d.is_dir()]
+        session_html = (session_dirs[0] / "unified.html").read_text()
+        assert "../index.html" in session_html  # Back to project
+        assert "../../index.html" in session_html  # Back to archive
+
 
 class TestJsonCommandWithUrl:
     """Tests for the json command with URL support."""

@@ -67,6 +67,15 @@
     <!-- Main Content -->
     <main id="main-content" class="main-content">
         <header class="main-header">
+            {%- if breadcrumbs %}
+            <nav class="breadcrumb">
+                <a href="{{ breadcrumbs.archive_url }}">Archive</a>
+                <span class="breadcrumb-sep">/</span>
+                <a href="{{ breadcrumbs.project_url }}">{{ breadcrumbs.project_name }}</a>
+                <span class="breadcrumb-sep">/</span>
+                <span class="breadcrumb-current">Session</span>
+            </nav>
+            {%- endif %}
             <h1>Claude Code Transcript</h1>
             <p class="header-stats">{{ prompt_count }} prompts &middot; {{ message_count }} messages &middot; {{ tool_count }} tool calls</p>
         </header>
