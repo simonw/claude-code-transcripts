@@ -42,6 +42,9 @@
             <span>{{ prompt_count }} prompts</span>
             <span>{{ message_count }} messages</span>
             <span>{{ tool_count }} tools</span>
+            {%- if total_tokens > 0 %}
+            <span>{{ total_tokens|default(0) }} tokens</span>
+            {%- endif %}
         </div>
 
         <nav class="sidebar-nav">
@@ -77,7 +80,7 @@
             </nav>
             {%- endif %}
             <h1>Claude Code Transcript</h1>
-            <p class="header-stats">{{ prompt_count }} prompts &middot; {{ message_count }} messages &middot; {{ tool_count }} tool calls</p>
+            <p class="header-stats">{{ prompt_count }} prompts &middot; {{ message_count }} messages &middot; {{ tool_count }} tool calls{% if total_tokens > 0 %} &middot; {{ token_stats }}{% endif %}</p>
         </header>
 
         <div id="search-results-banner" class="search-results-banner hidden">

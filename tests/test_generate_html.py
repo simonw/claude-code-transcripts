@@ -27,6 +27,11 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    extract_token_usage,
+    calculate_session_tokens,
+    calculate_token_cost,
+    format_token_stats,
+    MODEL_PRICING,
 )
 
 
@@ -1574,3 +1579,313 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestTokenUsage:
+    """Tests for token usage tracking."""
+
+    def test_extract_token_usage_from_assistant_message(self):
+        """Test extracting token usage from an assistant logline."""
+        logline = {
+            "type": "assistant",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hi"}],
+            },
+            "usage": {"input_tokens": 100, "output_tokens": 50},
+        }
+        usage = extract_token_usage(logline)
+        assert usage["input_tokens"] == 100
+        assert usage["output_tokens"] == 50
+
+    def test_extract_token_usage_missing(self):
+        """Test extracting token usage when not present."""
+        logline = {
+            "type": "assistant",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hi"}],
+            },
+        }
+        usage = extract_token_usage(logline)
+        assert usage["input_tokens"] == 0
+        assert usage["output_tokens"] == 0
+
+    def test_extract_token_usage_with_cache_tokens(self):
+        """Test extracting token usage with cache read/write tokens."""
+        logline = {
+            "type": "assistant",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "message": {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Hi"}],
+            },
+            "usage": {
+                "input_tokens": 100,
+                "output_tokens": 50,
+                "cache_read_input_tokens": 80,
+                "cache_creation_input_tokens": 20,
+            },
+        }
+        usage = extract_token_usage(logline)
+        assert usage["input_tokens"] == 100
+        assert usage["output_tokens"] == 50
+        assert usage["cache_read_input_tokens"] == 80
+        assert usage["cache_creation_input_tokens"] == 20
+
+    def test_calculate_session_tokens(self):
+        """Test calculating total tokens for a session."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T00:00:00Z",
+                "message": {"content": "Hello"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T00:00:01Z",
+                "message": {"content": [{"type": "text", "text": "Hi"}]},
+                "usage": {"input_tokens": 100, "output_tokens": 50},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T00:00:02Z",
+                "message": {"content": [{"type": "text", "text": "Bye"}]},
+                "usage": {"input_tokens": 200, "output_tokens": 75},
+            },
+        ]
+        totals = calculate_session_tokens(loglines)
+        assert totals["input_tokens"] == 300
+        assert totals["output_tokens"] == 125
+        assert totals["total_tokens"] == 425
+
+    def test_calculate_session_tokens_with_cache(self):
+        """Test calculating total tokens including cache tokens."""
+        loglines = [
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T00:00:01Z",
+                "message": {"content": [{"type": "text", "text": "Hi"}]},
+                "usage": {
+                    "input_tokens": 100,
+                    "output_tokens": 50,
+                    "cache_read_input_tokens": 80,
+                    "cache_creation_input_tokens": 20,
+                },
+            },
+        ]
+        totals = calculate_session_tokens(loglines)
+        assert totals["input_tokens"] == 100
+        assert totals["output_tokens"] == 50
+        assert totals["cache_read_input_tokens"] == 80
+        assert totals["cache_creation_input_tokens"] == 20
+
+    def test_calculate_token_cost_sonnet(self):
+        """Test cost calculation for Claude Sonnet model."""
+        # Sonnet: $3/M input, $15/M output
+        cost = calculate_token_cost(1000000, 1000000, model="claude-sonnet-4-20250514")
+        assert cost == pytest.approx(3.0 + 15.0, rel=0.01)
+
+    def test_calculate_token_cost_opus(self):
+        """Test cost calculation for Claude Opus model."""
+        # Opus: $15/M input, $75/M output
+        cost = calculate_token_cost(1000000, 1000000, model="claude-opus-4-20250514")
+        assert cost == pytest.approx(15.0 + 75.0, rel=0.01)
+
+    def test_calculate_token_cost_with_cache(self):
+        """Test cost calculation including cache tokens."""
+        # Cache read is 90% cheaper, cache write is 25% more expensive
+        cost = calculate_token_cost(
+            input_tokens=100000,
+            output_tokens=50000,
+            cache_read_tokens=80000,
+            cache_creation_tokens=20000,
+            model="claude-sonnet-4-20250514",
+        )
+        # Expected: (100000 * 3 + 80000 * 0.3 + 20000 * 3.75 + 50000 * 15) / 1000000
+        expected = (100000 * 3 + 80000 * 0.3 + 20000 * 3.75 + 50000 * 15) / 1000000
+        assert cost == pytest.approx(expected, rel=0.01)
+
+    def test_calculate_token_cost_default_model(self):
+        """Test cost calculation with default model."""
+        cost = calculate_token_cost(1000, 1000)
+        assert cost > 0  # Should use default pricing
+
+    def test_format_token_stats(self):
+        """Test formatting token stats for display."""
+        result = format_token_stats(1500, 750, 2250, 0.05)
+        assert "1,500" in result or "1500" in result  # Input tokens
+        assert "750" in result  # Output tokens
+        assert "2,250" in result or "2250" in result  # Total tokens
+        assert "$0.05" in result or "0.05" in result  # Cost
+
+    def test_format_token_stats_large_numbers(self):
+        """Test formatting large token numbers."""
+        result = format_token_stats(1500000, 750000, 2250000, 125.50)
+        assert "1.5M" in result or "1,500,000" in result  # Input tokens
+        assert "$125" in result  # Cost
+
+    def test_model_pricing_constants(self):
+        """Test that model pricing constants are defined."""
+        assert "claude-sonnet-4-20250514" in MODEL_PRICING
+        assert "claude-opus-4-20250514" in MODEL_PRICING
+        assert "input" in MODEL_PRICING["claude-sonnet-4-20250514"]
+        assert "output" in MODEL_PRICING["claude-sonnet-4-20250514"]
+
+
+class TestTokenUsageInHtml:
+    """Tests for token usage display in generated HTML."""
+
+    def test_token_stats_in_index_header(self, tmp_path):
+        """Test that token stats appear in the index page header."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "message": {"content": "Hello"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T00:00:01Z",
+                    "message": {"content": [{"type": "text", "text": "Hi there!"}]},
+                    "usage": {"input_tokens": 1000, "output_tokens": 500},
+                },
+            ]
+        }
+        session_file = tmp_path / "session.json"
+        session_file.write_text(json.dumps(session_data))
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        # Should show token stats in header
+        assert "1,000" in index_html or "1000" in index_html  # input tokens
+        assert "500" in index_html  # output tokens
+        assert "1,500" in index_html or "1500" in index_html  # total tokens
+
+    def test_token_cost_in_index_header(self, tmp_path):
+        """Test that estimated cost appears in the index page header."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "message": {"content": "Hello"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T00:00:01Z",
+                    "message": {"content": [{"type": "text", "text": "Hi there!"}]},
+                    "usage": {"input_tokens": 100000, "output_tokens": 50000},
+                },
+            ]
+        }
+        session_file = tmp_path / "session.json"
+        session_file.write_text(json.dumps(session_data))
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        # Should show cost estimate
+        assert "$" in index_html
+
+    def test_token_stats_in_unified_view(self, tmp_path):
+        """Test that token stats appear in the unified view header."""
+        from claude_code_transcripts import generate_unified_html
+
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "message": {"content": "Hello"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T00:00:01Z",
+                    "message": {"content": [{"type": "text", "text": "Hi there!"}]},
+                    "usage": {"input_tokens": 1000, "output_tokens": 500},
+                },
+            ]
+        }
+        session_file = tmp_path / "session.json"
+        session_file.write_text(json.dumps(session_data))
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_unified_html(session_file, output_dir)
+
+        unified_html = (output_dir / "unified.html").read_text(encoding="utf-8")
+        # Should show token stats in header
+        assert "1,000" in unified_html or "1000" in unified_html  # input tokens
+        assert "500" in unified_html  # output tokens
+
+    def test_per_message_token_display(self, tmp_path):
+        """Test that individual message token counts are displayed."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "message": {"content": "Hello"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T00:00:01Z",
+                    "message": {"content": [{"type": "text", "text": "Hi there!"}]},
+                    "usage": {"input_tokens": 150, "output_tokens": 75},
+                },
+            ]
+        }
+        session_file = tmp_path / "session.json"
+        session_file.write_text(json.dumps(session_data))
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(session_file, output_dir)
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        # Should show per-message token info (in: X, out: Y)
+        assert "150" in page_html  # input tokens for this message
+        assert "75" in page_html  # output tokens for this message
+
+    def test_no_token_stats_when_missing(self, tmp_path):
+        """Test handling when no token usage data is present."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "message": {"content": "Hello"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T00:00:01Z",
+                    "message": {"content": [{"type": "text", "text": "Hi there!"}]},
+                    # No usage field
+                },
+            ]
+        }
+        session_file = tmp_path / "session.json"
+        session_file.write_text(json.dumps(session_data))
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Should not raise an error
+        generate_html(session_file, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        # Should still generate valid HTML
+        assert "Claude Code transcript" in index_html

@@ -82,6 +82,144 @@ _github_repo = None
 API_BASE_URL = "https://api.anthropic.com/v1"
 ANTHROPIC_VERSION = "2023-06-01"
 
+# Token pricing per million tokens (as of 2025)
+# https://www.anthropic.com/pricing
+MODEL_PRICING = {
+    # Claude Sonnet 4
+    "claude-sonnet-4-20250514": {
+        "input": 3.0,  # $3 per million input tokens
+        "output": 15.0,  # $15 per million output tokens
+        "cache_read": 0.30,  # 90% discount on cached reads
+        "cache_write": 3.75,  # 25% premium for cache creation
+    },
+    # Claude Opus 4
+    "claude-opus-4-20250514": {
+        "input": 15.0,  # $15 per million input tokens
+        "output": 75.0,  # $75 per million output tokens
+        "cache_read": 1.50,  # 90% discount on cached reads
+        "cache_write": 18.75,  # 25% premium for cache creation
+    },
+    # Claude 3.5 Sonnet (legacy)
+    "claude-3-5-sonnet-20241022": {
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
+    },
+    # Default pricing (use Sonnet pricing as default)
+    "default": {
+        "input": 3.0,
+        "output": 15.0,
+        "cache_read": 0.30,
+        "cache_write": 3.75,
+    },
+}
+
+
+def extract_token_usage(logline):
+    """Extract token usage from a logline.
+
+    Args:
+        logline: A single logline dict from the session data.
+
+    Returns:
+        Dict with input_tokens, output_tokens, and optionally cache tokens.
+    """
+    usage = logline.get("usage", {})
+    return {
+        "input_tokens": usage.get("input_tokens", 0),
+        "output_tokens": usage.get("output_tokens", 0),
+        "cache_read_input_tokens": usage.get("cache_read_input_tokens", 0),
+        "cache_creation_input_tokens": usage.get("cache_creation_input_tokens", 0),
+    }
+
+
+def calculate_session_tokens(loglines):
+    """Calculate total token usage for a session.
+
+    Args:
+        loglines: List of logline dicts from the session data.
+
+    Returns:
+        Dict with total input_tokens, output_tokens, total_tokens, and cache tokens.
+    """
+    totals = {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "cache_creation_input_tokens": 0,
+    }
+
+    for logline in loglines:
+        usage = extract_token_usage(logline)
+        totals["input_tokens"] += usage["input_tokens"]
+        totals["output_tokens"] += usage["output_tokens"]
+        totals["cache_read_input_tokens"] += usage["cache_read_input_tokens"]
+        totals["cache_creation_input_tokens"] += usage["cache_creation_input_tokens"]
+
+    totals["total_tokens"] = totals["input_tokens"] + totals["output_tokens"]
+    return totals
+
+
+def calculate_token_cost(
+    input_tokens,
+    output_tokens,
+    cache_read_tokens=0,
+    cache_creation_tokens=0,
+    model=None,
+):
+    """Calculate the estimated cost for token usage.
+
+    Args:
+        input_tokens: Number of input tokens.
+        output_tokens: Number of output tokens.
+        cache_read_tokens: Number of cache read tokens.
+        cache_creation_tokens: Number of cache creation tokens.
+        model: Model name for pricing (uses default if not found).
+
+    Returns:
+        Estimated cost in USD.
+    """
+    pricing = MODEL_PRICING.get(model, MODEL_PRICING["default"])
+
+    cost = (
+        (input_tokens * pricing["input"])
+        + (output_tokens * pricing["output"])
+        + (cache_read_tokens * pricing["cache_read"])
+        + (cache_creation_tokens * pricing["cache_write"])
+    ) / 1_000_000
+
+    return cost
+
+
+def format_token_stats(input_tokens, output_tokens, total_tokens, cost):
+    """Format token stats for display.
+
+    Args:
+        input_tokens: Number of input tokens.
+        output_tokens: Number of output tokens.
+        total_tokens: Total number of tokens.
+        cost: Estimated cost in USD.
+
+    Returns:
+        Formatted string for display.
+    """
+
+    def format_number(n):
+        if n >= 1_000_000:
+            return f"{n / 1_000_000:.1f}M"
+        elif n >= 1_000:
+            return f"{n:,}"
+        return str(n)
+
+    parts = [
+        f"{format_number(input_tokens)} in",
+        f"{format_number(output_tokens)} out",
+        f"{format_number(total_tokens)} total",
+        f"${cost:.2f}",
+    ]
+    return " · ".join(parts)
+
 
 def get_session_summary(filepath, max_length=200):
     """Extract a human-readable summary from a session file.
@@ -864,12 +1002,18 @@ def make_msg_id(timestamp):
 
 
 def analyze_conversation(messages):
-    """Analyze messages in a conversation to extract stats and long texts."""
+    """Analyze messages in a conversation to extract stats and long texts.
+
+    Messages can be 3-tuples (log_type, message_json, timestamp) or
+    4-tuples (log_type, message_json, timestamp, usage).
+    """
     tool_counts = {}  # tool_name -> count
     long_texts = []
     commits = []  # list of (hash, message, timestamp)
 
-    for log_type, message_json, timestamp in messages:
+    for msg_tuple in messages:
+        # Handle both 3-tuple and 4-tuple formats
+        log_type, message_json, timestamp = msg_tuple[:3]
         if not message_json:
             continue
         try:
@@ -947,13 +1091,15 @@ def is_tool_result_message(message_data):
     )
 
 
-def render_message(log_type, message_json, timestamp):
+def render_message(log_type, message_json, timestamp, usage=None):
     if not message_json:
         return ""
     try:
         message_data = json.loads(message_json)
     except json.JSONDecodeError:
         return ""
+
+    token_info = ""
     if log_type == "user":
         content_html = render_user_message_content(message_data)
         # Check if this is a tool result message
@@ -964,12 +1110,20 @@ def render_message(log_type, message_json, timestamp):
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
+        # Add token info for assistant messages
+        if usage:
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+            if input_tokens > 0 or output_tokens > 0:
+                token_info = f"in: {input_tokens:,} · out: {output_tokens:,}"
     else:
         return ""
     if not content_html.strip():
         return ""
     msg_id = make_msg_id(timestamp)
-    return _macros.message(role_class, role_label, msg_id, timestamp, content_html)
+    return _macros.message(
+        role_class, role_label, msg_id, timestamp, content_html, token_info
+    )
 
 
 CSS = """
@@ -990,6 +1144,7 @@ h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom:
 .message-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; background: rgba(0,0,0,0.03); font-size: 0.85rem; }
 .role-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
 .user .role-label { color: var(--user-border); }
+.token-info { font-size: 0.75rem; color: var(--text-muted); margin-left: auto; margin-right: 12px; }
 time { color: var(--text-muted); font-size: 0.8rem; }
 .timestamp-link { color: inherit; text-decoration: none; }
 .timestamp-link:hover { text-decoration: underline; }
@@ -2661,6 +2816,15 @@ def generate_html(json_path, output_dir, github_repo=None):
 
     loglines = data.get("loglines", [])
 
+    # Calculate token usage statistics
+    token_totals = calculate_session_tokens(loglines)
+    token_cost = calculate_token_cost(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["cache_read_input_tokens"],
+        token_totals["cache_creation_input_tokens"],
+    )
+
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
         github_repo = detect_github_repo(loglines)
@@ -2682,6 +2846,7 @@ def generate_html(json_path, output_dir, github_repo=None):
         timestamp = entry.get("timestamp", "")
         is_compact_summary = entry.get("isCompactSummary", False)
         message_data = entry.get("message", {})
+        usage = entry.get("usage", {})
         if not message_data:
             continue
         # Convert message dict to JSON string for compatibility with existing render functions
@@ -2700,11 +2865,11 @@ def generate_html(json_path, output_dir, github_repo=None):
             current_conv = {
                 "user_text": user_text,
                 "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
+                "messages": [(log_type, message_json, timestamp, usage)],
                 "is_continuation": bool(is_compact_summary),
             }
         elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
+            current_conv["messages"].append((log_type, message_json, timestamp, usage))
     if current_conv:
         conversations.append(current_conv)
 
@@ -2718,8 +2883,8 @@ def generate_html(json_path, output_dir, github_repo=None):
         messages_html = []
         for conv in page_convs:
             is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
+            for log_type, message_json, timestamp, usage in conv["messages"]:
+                msg_html = render_message(log_type, message_json, timestamp, usage)
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
                     if is_first and conv.get("is_continuation"):
@@ -2809,6 +2974,15 @@ def generate_html(json_path, output_dir, github_repo=None):
 
     index_pagination = generate_index_pagination_html(total_pages)
     index_template = get_template("index.html")
+
+    # Format token stats for display
+    token_stats_str = format_token_stats(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["total_tokens"],
+        token_cost,
+    )
+
     index_content = index_template.render(
         css=CSS,
         js=JS,
@@ -2819,6 +2993,11 @@ def generate_html(json_path, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        token_stats=token_stats_str,
+        input_tokens=token_totals["input_tokens"],
+        output_tokens=token_totals["output_tokens"],
+        total_tokens=token_totals["total_tokens"],
+        token_cost=token_cost,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
@@ -2921,6 +3100,15 @@ def generate_unified_html(json_path, output_dir, github_repo=None, breadcrumbs=N
     # Load session file (supports both JSON and JSONL)
     data = parse_session_file(json_path)
     loglines = data.get("loglines", [])
+
+    # Calculate token usage statistics
+    token_totals = calculate_session_tokens(loglines)
+    token_cost = calculate_token_cost(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["cache_read_input_tokens"],
+        token_totals["cache_creation_input_tokens"],
+    )
 
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
@@ -3025,6 +3213,14 @@ def generate_unified_html(json_path, output_dir, github_repo=None, breadcrumbs=N
 
     total_tool_calls = sum(total_tool_counts.values())
 
+    # Format token stats for display
+    token_stats_str = format_token_stats(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["total_tokens"],
+        token_cost,
+    )
+
     # Render the unified template
     unified_template = get_template("unified.html")
     unified_content = unified_template.render(
@@ -3036,6 +3232,11 @@ def generate_unified_html(json_path, output_dir, github_repo=None, breadcrumbs=N
         message_count=total_messages,
         tool_count=total_tool_calls,
         breadcrumbs=breadcrumbs,
+        token_stats=token_stats_str,
+        input_tokens=token_totals["input_tokens"],
+        output_tokens=token_totals["output_tokens"],
+        total_tokens=token_totals["total_tokens"],
+        token_cost=token_cost,
     )
 
     unified_path = output_dir / "unified.html"
@@ -3379,6 +3580,15 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
 
     loglines = session_data.get("loglines", [])
 
+    # Calculate token usage statistics
+    token_totals = calculate_session_tokens(loglines)
+    token_cost = calculate_token_cost(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["cache_read_input_tokens"],
+        token_totals["cache_creation_input_tokens"],
+    )
+
     # Auto-detect GitHub repo if not provided
     if github_repo is None:
         github_repo = detect_github_repo(loglines)
@@ -3396,6 +3606,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         timestamp = entry.get("timestamp", "")
         is_compact_summary = entry.get("isCompactSummary", False)
         message_data = entry.get("message", {})
+        usage = entry.get("usage", {})
         if not message_data:
             continue
         # Convert message dict to JSON string for compatibility with existing render functions
@@ -3414,11 +3625,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
             current_conv = {
                 "user_text": user_text,
                 "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
+                "messages": [(log_type, message_json, timestamp, usage)],
                 "is_continuation": bool(is_compact_summary),
             }
         elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
+            current_conv["messages"].append((log_type, message_json, timestamp, usage))
     if current_conv:
         conversations.append(current_conv)
 
@@ -3432,8 +3643,8 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         messages_html = []
         for conv in page_convs:
             is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
+            for log_type, message_json, timestamp, usage in conv["messages"]:
+                msg_html = render_message(log_type, message_json, timestamp, usage)
                 if msg_html:
                     # Wrap continuation summaries in collapsed details
                     if is_first and conv.get("is_continuation"):
@@ -3523,6 +3734,15 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
 
     index_pagination = generate_index_pagination_html(total_pages)
     index_template = get_template("index.html")
+
+    # Format token stats for display
+    token_stats_str = format_token_stats(
+        token_totals["input_tokens"],
+        token_totals["output_tokens"],
+        token_totals["total_tokens"],
+        token_cost,
+    )
+
     index_content = index_template.render(
         css=CSS,
         js=JS,
@@ -3533,6 +3753,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         total_commits=total_commits,
         total_pages=total_pages,
         index_items_html="".join(index_items),
+        token_stats=token_stats_str,
+        input_tokens=token_totals["input_tokens"],
+        output_tokens=token_totals["output_tokens"],
+        total_tokens=token_totals["total_tokens"],
+        token_cost=token_cost,
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
