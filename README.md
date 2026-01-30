@@ -77,6 +77,9 @@ claude-code-transcripts local --limit 20
 Import sessions directly from the Claude API:
 
 ```bash
+# List available web sessions
+claude-code-transcripts web --list
+
 # Interactive session picker
 claude-code-transcripts web
 
@@ -87,7 +90,17 @@ claude-code-transcripts web SESSION_ID
 claude-code-transcripts web SESSION_ID --gist
 ```
 
-The session picker displays sessions grouped by their associated GitHub repository:
+Use `--list` to display all available sessions without converting:
+
+```bash
+# List all sessions
+claude-code-transcripts web --list
+
+# List sessions for a specific repo
+claude-code-transcripts web --list --repo owner/repo
+```
+
+The session list displays sessions grouped by their associated GitHub repository:
 
 ```
 simonw/datasette              2025-01-15T10:30:00  Fix the bug in query parser
