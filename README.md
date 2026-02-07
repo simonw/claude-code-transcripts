@@ -101,7 +101,7 @@ Use `--repo` to filter the session list to a specific repository:
 claude-code-transcripts web --repo simonw/datasette
 ```
 
-On macOS, API credentials are automatically retrieved from your keychain (requires being logged into Claude Code). On other platforms, provide `--token` and `--org-uuid` manually.
+On macOS and Linux, API credentials are automatically retrieved from your system (requires being logged into Claude Code). On macOS, credentials are read from the keychain. On Linux, credentials are read from `~/.claude/.credentials.json` (with token expiration checking). On other platforms, provide `--token` and `--org-uuid` manually.
 
 ### Publishing to GitHub Gist
 
