@@ -567,6 +567,41 @@ class TestInjectGistPreviewJs:
         # The JS should listen for DOMContentLoaded
         assert "DOMContentLoaded" in GIST_PREVIEW_JS
 
+    def test_gist_preview_js_detects_by_query_string_not_hostname(self):
+        """Test that GIST_PREVIEW_JS detects gist preview context using the URL
+        query string pattern (?<hex-gist-id>/...) instead of hardcoded hostnames.
+
+        This allows it to work on any gist preview host, not just
+        gisthost.github.io and gistpreview.github.io.
+        """
+        # Should NOT contain hardcoded hostname checks
+        assert "gisthost.github.io" not in GIST_PREVIEW_JS
+        assert "gistpreview.github.io" not in GIST_PREVIEW_JS
+        # Should use a regex on location.search to detect gist preview context
+        assert "location.search" in GIST_PREVIEW_JS
+
+
+class TestSearchJsGistDetection:
+    """Tests for gist preview detection in search.js template."""
+
+    @pytest.fixture
+    def search_js_content(self):
+        search_js_path = (
+            Path(__file__).parent.parent
+            / "src"
+            / "claude_code_transcripts"
+            / "templates"
+            / "search.js"
+        )
+        return search_js_path.read_text(encoding="utf-8")
+
+    def test_search_js_detects_by_query_string_not_hostname(self, search_js_content):
+        """Test that search.js detects gist preview context using the URL
+        query string pattern instead of hardcoded hostnames."""
+        assert "gisthost.github.io" not in search_js_content
+        assert "gistpreview.github.io" not in search_js_content
+        assert "location.search" in search_js_content
+
 
 class TestCreateGist:
     """Tests for the create_gist function."""
@@ -728,9 +763,9 @@ class TestSessionGistOption:
 
         assert result.exit_code == 0
         assert (output_dir / "index.html").exists()
-        # Verify JS was injected (checks for both domains for backwards compatibility)
+        # Verify gist preview JS was injected
         index_content = (output_dir / "index.html").read_text(encoding="utf-8")
-        assert "gisthost.github.io" in index_content
+        assert "location.search" in index_content
 
 
 class TestContinuationLongTexts:

@@ -1141,14 +1141,13 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
 });
 """
 
-# JavaScript to fix relative URLs when served via gisthost.github.io or gistpreview.github.io
-# Fixes issue #26: Pagination links broken on gisthost.github.io
+# JavaScript to fix relative URLs when served via gist preview hosts.
+# Detects gist preview context by the URL query string pattern ?<hex-gist-id>/...
+# Fixes issue #26: Pagination links broken on gist preview hosts
 GIST_PREVIEW_JS = r"""
 (function() {
-    var hostname = window.location.hostname;
-    if (hostname !== 'gisthost.github.io' && hostname !== 'gistpreview.github.io') return;
-    // URL format: https://gisthost.github.io/?GIST_ID/filename.html
-    var match = window.location.search.match(/^\?([^/]+)/);
+    // Detect gist preview context by query string pattern: ?<hex-gist-id>/...
+    var match = window.location.search.match(/^\?([a-f0-9]{20,})(\/|$)/i);
     if (!match) return;
     var gistId = match[1];
 
@@ -1176,7 +1175,7 @@ GIST_PREVIEW_JS = r"""
     }
 
     // Use MutationObserver to catch dynamically added content
-    // gistpreview.github.io may add content after initial load
+    // Gist preview hosts may add content after initial load
     var observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
             mutation.addedNodes.forEach(function(node) {
@@ -1209,7 +1208,7 @@ GIST_PREVIEW_JS = r"""
     startObserving();
 
     // Handle fragment navigation after dynamic content loads
-    // gisthost.github.io/gistpreview.github.io loads content dynamically, so the browser's
+    // Gist preview hosts load content dynamically, so the browser's
     // native fragment navigation fails because the element doesn't exist yet
     function scrollToFragment() {
         var hash = window.location.hash;
