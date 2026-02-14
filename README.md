@@ -55,6 +55,7 @@ All commands support these options:
 - `--open` - open the generated `index.html` in your default browser (default if no `-o` specified)
 - `--gist` - upload the generated HTML files to a GitHub Gist and output a preview URL
 - `--json` - include the original session file in the output directory
+- `--output-mode` - control how much detail is shown: `full` (default), `compact`, or `conversation`
 
 The generated output includes:
 - `index.html` - an index page with a timeline of prompts and commits
@@ -160,6 +161,33 @@ JSON: ./my-transcript/session_ABC.json (245.3 KB)
 ```
 
 This is useful for archiving the source data alongside the HTML output.
+
+### Filtering output
+
+Use `--output-mode` to control how much detail is included in the generated HTML:
+
+```bash
+# Show everything (default)
+claude-code-transcripts json session.json --output-mode full
+
+# Hide tool results but keep tool call headers (useful for hiding sensitive output)
+claude-code-transcripts json session.json --output-mode compact
+
+# Show only user prompts and assistant text (no tools, no thinking)
+claude-code-transcripts json session.json --output-mode conversation
+```
+
+The three modes are:
+
+| Mode | User text | Assistant text | Tool calls | Tool results | Thinking |
+|------|-----------|---------------|------------|-------------|----------|
+| `full` | Yes | Yes | Yes | Yes | Yes |
+| `compact` | Yes | Yes | Yes | No | Yes |
+| `conversation` | Yes | Yes | No | No | No |
+
+`compact` mode is useful when tool results might contain sensitive information (environment variables, file contents, etc.) but you still want to see what tools were invoked. `conversation` mode gives a clean "what did we discuss?" view.
+
+This option works with all commands (`local`, `web`, `json`, `all`).
 
 ### Converting from JSON/JSONL files
 

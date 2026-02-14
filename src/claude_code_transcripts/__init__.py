@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import webbrowser
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -77,6 +78,41 @@ def extract_text_from_content(content):
 
 # Module-level variable for GitHub repo (set by generate_html)
 _github_repo = None
+
+
+@dataclass
+class OutputFilter:
+    """Controls which content types are included in the rendered output.
+
+    Individual flags can be set directly, or use from_mode() for presets.
+    """
+
+    hide_tool_calls: bool = False
+    hide_tool_results: bool = False
+    hide_thinking: bool = False
+
+    def should_hide(self, block_type: str) -> bool:
+        """Check whether a content block type should be hidden."""
+        if block_type == "thinking":
+            return self.hide_thinking
+        if block_type == "tool_use":
+            return self.hide_tool_calls
+        if block_type == "tool_result":
+            return self.hide_tool_results
+        return False
+
+    @classmethod
+    def from_mode(cls, mode: str) -> "OutputFilter":
+        if mode == "compact":
+            return cls(hide_tool_results=True)
+        elif mode == "conversation":
+            return cls(hide_tool_calls=True, hide_tool_results=True, hide_thinking=True)
+        else:  # "full"
+            return cls()
+
+
+# Module-level variable for output filtering (set by generate_html)
+_output_filter = OutputFilter()
 
 # API constants
 API_BASE_URL = "https://api.anthropic.com/v1"
@@ -304,7 +340,11 @@ def find_all_sessions(folder, include_agents=False):
 
 
 def generate_batch_html(
-    source_folder, output_dir, include_agents=False, progress_callback=None
+    source_folder,
+    output_dir,
+    include_agents=False,
+    progress_callback=None,
+    output_filter=None,
 ):
     """Generate HTML archive for all sessions in a Claude projects folder.
 
@@ -319,6 +359,7 @@ def generate_batch_html(
         include_agents: Whether to include agent-* session files
         progress_callback: Optional callback(project_name, session_name, current, total)
             called after each session is processed
+        output_filter: Optional OutputFilter controlling content visibility
 
     Returns statistics dict with total_projects, total_sessions, failed_sessions, output_dir.
     """
@@ -347,7 +388,9 @@ def generate_batch_html(
 
             # Generate transcript HTML with error handling
             try:
-                generate_html(session["path"], session_dir)
+                generate_html(
+                    session["path"], session_dir, output_filter=output_filter
+                )
                 successful_sessions += 1
             except Exception as e:
                 failed_sessions.append(
@@ -747,6 +790,8 @@ def render_content_block(block):
     if not isinstance(block, dict):
         return f"<p>{html.escape(str(block))}</p>"
     block_type = block.get("type", "")
+    if _output_filter.should_hide(block_type):
+        return ""
     if block_type == "image":
         source = block.get("source", {})
         media_type = source.get("media_type", "image/png")
@@ -885,7 +930,7 @@ def analyze_conversation(messages):
                 continue
             block_type = block.get("type", "")
 
-            if block_type == "tool_use":
+            if block_type == "tool_use" and not _output_filter.should_hide("tool_use"):
                 tool_name = block.get("name", "Unknown")
                 tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
             elif block_type == "tool_result":
@@ -954,12 +999,14 @@ def render_message(log_type, message_json, timestamp):
     except json.JSONDecodeError:
         return ""
     if log_type == "user":
-        content_html = render_user_message_content(message_data)
         # Check if this is a tool result message
         if is_tool_result_message(message_data):
+            if _output_filter.should_hide("tool_result"):
+                return ""
             role_class, role_label = "tool-reply", "Tool reply"
         else:
             role_class, role_label = "user", "User"
+        content_html = render_user_message_content(message_data)
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
@@ -1295,7 +1342,7 @@ def generate_index_pagination_html(total_pages):
     return _macros.index_pagination(total_pages)
 
 
-def generate_html(json_path, output_dir, github_repo=None):
+def generate_html(json_path, output_dir, github_repo=None, output_filter=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
 
@@ -1314,9 +1361,11 @@ def generate_html(json_path, output_dir, github_repo=None):
                 "Warning: Could not auto-detect GitHub repo. Commit links will be disabled."
             )
 
-    # Set module-level variable for render functions
+    # Set module-level variables for render functions
     global _github_repo
     _github_repo = github_repo
+    global _output_filter
+    _output_filter = output_filter or OutputFilter()
 
     conversations = []
     current_conv = None
@@ -1516,7 +1565,15 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--output-mode",
+    type=click.Choice(["full", "compact", "conversation"]),
+    default="full",
+    help="Output detail level: full (default), compact (hide tool results), conversation (text only).",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, output_mode
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1567,7 +1624,12 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
+    generate_html(
+        session_file,
+        output,
+        github_repo=repo,
+        output_filter=OutputFilter.from_mode(output_mode),
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1668,7 +1730,15 @@ def fetch_url_to_tempfile(url):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
+@click.option(
+    "--output-mode",
+    type=click.Choice(["full", "compact", "conversation"]),
+    default="full",
+    help="Output detail level: full (default), compact (hide tool results), conversation (text only).",
+)
+def json_cmd(
+    json_file, output, output_auto, repo, gist, include_json, open_browser, output_mode
+):
     """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
@@ -1698,7 +1768,12 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         )
 
     output = Path(output)
-    generate_html(json_file_path, output, github_repo=repo)
+    generate_html(
+        json_file_path,
+        output,
+        github_repo=repo,
+        output_filter=OutputFilter.from_mode(output_mode),
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -1775,7 +1850,9 @@ def format_session_for_display(session_data):
     return f"{repo_display:30}  {date_display:19}  {title}"
 
 
-def generate_html_from_session_data(session_data, output_dir, github_repo=None):
+def generate_html_from_session_data(
+    session_data, output_dir, github_repo=None, output_filter=None
+):
     """Generate HTML from session data dict (instead of file path)."""
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
@@ -1788,9 +1865,11 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         if github_repo:
             click.echo(f"Auto-detected GitHub repo: {github_repo}")
 
-    # Set module-level variable for render functions
+    # Set module-level variables for render functions
     global _github_repo
     _github_repo = github_repo
+    global _output_filter
+    _output_filter = output_filter or OutputFilter()
 
     conversations = []
     current_conv = None
@@ -1983,6 +2062,12 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
+@click.option(
+    "--output-mode",
+    type=click.Choice(["full", "compact", "conversation"]),
+    default="full",
+    help="Output detail level: full (default), compact (hide tool results), conversation (text only).",
+)
 def web_cmd(
     session_id,
     output,
@@ -1993,6 +2078,7 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    output_mode,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -2068,7 +2154,12 @@ def web_cmd(
 
     output = Path(output)
     click.echo(f"Generating HTML in {output}/...")
-    generate_html_from_session_data(session_data, output, github_repo=repo)
+    generate_html_from_session_data(
+        session_data,
+        output,
+        github_repo=repo,
+        output_filter=OutputFilter.from_mode(output_mode),
+    )
 
     # Show output directory
     click.echo(f"Output: {output.resolve()}")
@@ -2132,7 +2223,13 @@ def web_cmd(
     is_flag=True,
     help="Suppress all output except errors.",
 )
-def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
+@click.option(
+    "--output-mode",
+    type=click.Choice(["full", "compact", "conversation"]),
+    default="full",
+    help="Output detail level: full (default), compact (hide tool results), conversation (text only).",
+)
+def all_cmd(source, output, include_agents, dry_run, open_browser, quiet, output_mode):
     """Convert all local Claude Code sessions to a browsable HTML archive.
 
     Creates a directory structure with:
@@ -2198,6 +2295,7 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         output,
         include_agents=include_agents,
         progress_callback=on_progress,
+        output_filter=OutputFilter.from_mode(output_mode),
     )
 
     # Report any failures

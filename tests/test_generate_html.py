@@ -27,6 +27,7 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    OutputFilter,
 )
 
 
@@ -1638,3 +1639,344 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestOutputFilter:
+    """Tests for the OutputFilter dataclass and output mode filtering."""
+
+    def test_from_mode_full(self):
+        """Test that 'full' mode produces default (no filtering)."""
+        f = OutputFilter.from_mode("full")
+        assert f.hide_tool_calls is False
+        assert f.hide_tool_results is False
+        assert f.hide_thinking is False
+
+    def test_from_mode_compact(self):
+        """Test that 'compact' mode hides tool results only."""
+        f = OutputFilter.from_mode("compact")
+        assert f.hide_tool_calls is False
+        assert f.hide_tool_results is True
+        assert f.hide_thinking is False
+
+    def test_from_mode_conversation(self):
+        """Test that 'conversation' mode hides tools, results, and thinking."""
+        f = OutputFilter.from_mode("conversation")
+        assert f.hide_tool_calls is True
+        assert f.hide_tool_results is True
+        assert f.hide_thinking is True
+
+    def test_compact_mode_hides_tool_results(self, tmp_path):
+        """Test that compact mode hides tool results but keeps tool calls."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {"content": "Run the tests", "role": "user"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "I'll run the tests now."},
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "id": "tool-1",
+                                "input": {
+                                    "command": "pytest",
+                                    "description": "Run tests",
+                                },
+                            },
+                            {
+                                "type": "tool_result",
+                                "content": "PASSED: 5 tests in 1.2s\nSECRET_KEY=abc123",
+                                "is_error": False,
+                            },
+                        ],
+                    },
+                },
+            ]
+        }
+
+        session_file = tmp_path / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(
+            session_file,
+            output_dir,
+            output_filter=OutputFilter.from_mode("compact"),
+        )
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+
+        # Tool call should still be visible
+        assert "pytest" in page_html
+        # Assistant text should be visible
+        assert "run the tests now" in page_html
+        # Tool result content should be hidden
+        assert "SECRET_KEY" not in page_html
+        assert "PASSED: 5 tests" not in page_html
+
+    def test_compact_mode_hides_tool_reply_messages(self, tmp_path):
+        """Test that compact mode hides standalone 'Tool reply' messages."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {"content": "Run something", "role": "user"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "id": "tool-1",
+                                "input": {"command": "echo hello"},
+                            },
+                        ],
+                    },
+                },
+                # This is a "Tool reply" message - user type but only tool_result content
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:10.000Z",
+                    "message": {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "content": "hello\nSENSITIVE_DATA_HERE",
+                            }
+                        ],
+                    },
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:15.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "text", "text": "The command ran successfully."},
+                        ],
+                    },
+                },
+            ]
+        }
+
+        session_file = tmp_path / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(
+            session_file,
+            output_dir,
+            output_filter=OutputFilter.from_mode("compact"),
+        )
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+
+        # Tool reply content should be hidden
+        assert "SENSITIVE_DATA_HERE" not in page_html
+        # But assistant text should still be there
+        assert "command ran successfully" in page_html
+
+    def test_conversation_mode_hides_everything_except_text(self, tmp_path):
+        """Test that conversation mode shows only user/assistant text."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {"content": "Help me write code", "role": "user"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "thinking",
+                                "thinking": "Let me think about the approach...",
+                            },
+                            {"type": "text", "text": "Here's the code you need."},
+                            {
+                                "type": "tool_use",
+                                "name": "Write",
+                                "id": "tool-1",
+                                "input": {
+                                    "file_path": "/tmp/test.py",
+                                    "content": "print('hello')",
+                                },
+                            },
+                            {
+                                "type": "tool_result",
+                                "content": "File written successfully",
+                                "is_error": False,
+                            },
+                        ],
+                    },
+                },
+            ]
+        }
+
+        session_file = tmp_path / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(
+            session_file,
+            output_dir,
+            output_filter=OutputFilter.from_mode("conversation"),
+        )
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+
+        # User text and assistant text should be visible
+        assert "Help me write code" in page_html
+        assert "the code you need" in page_html
+        # Thinking should be hidden
+        assert "think about the approach" not in page_html
+        # Tool call should be hidden
+        assert "test.py" not in page_html
+        # Tool result should be hidden
+        assert "File written successfully" not in page_html
+
+    def test_full_mode_shows_everything(self, tmp_path):
+        """Test that full mode (default) shows all content types."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {"content": "Do something", "role": "user"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "thinking",
+                                "thinking": "Thinking content here.",
+                            },
+                            {"type": "text", "text": "Assistant response."},
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "id": "tool-1",
+                                "input": {"command": "ls -la"},
+                            },
+                            {
+                                "type": "tool_result",
+                                "content": "total 42\ndrwxr-xr-x",
+                                "is_error": False,
+                            },
+                        ],
+                    },
+                },
+            ]
+        }
+
+        session_file = tmp_path / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        # Default (no filter) should show everything
+        generate_html(session_file, output_dir)
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+
+        assert "Do something" in page_html
+        assert "Thinking content here" in page_html
+        assert "Assistant response" in page_html
+        assert "ls -la" in page_html
+        assert "total 42" in page_html
+
+    def test_conversation_mode_hides_tool_stats_in_index(self, tmp_path):
+        """Test that conversation mode hides tool stats from the index page."""
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-01-01T10:00:00.000Z",
+                    "message": {"content": "Run tests", "role": "user"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-01-01T10:00:05.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [
+                            {
+                                "type": "tool_use",
+                                "name": "Bash",
+                                "id": "tool-1",
+                                "input": {"command": "pytest"},
+                            },
+                        ],
+                    },
+                },
+            ]
+        }
+
+        session_file = tmp_path / "test_session.json"
+        session_file.write_text(json.dumps(session_data), encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        generate_html(
+            session_file,
+            output_dir,
+            output_filter=OutputFilter.from_mode("conversation"),
+        )
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Tool stats like "1 bash" should not appear in conversation mode
+        assert "1 bash" not in index_html
+
+    def test_output_mode_cli_option(self, tmp_path):
+        """Test that --output-mode CLI option works."""
+        from click.testing import CliRunner
+        from claude_code_transcripts import cli
+
+        fixture_path = Path(__file__).parent / "sample_session.json"
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "json",
+                str(fixture_path),
+                "-o",
+                str(output_dir),
+                "--output-mode",
+                "compact",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (output_dir / "index.html").exists()
