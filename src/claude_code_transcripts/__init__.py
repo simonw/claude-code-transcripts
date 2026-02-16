@@ -1236,11 +1236,15 @@ GIST_PREVIEW_JS = r"""
 
 
 def inject_gist_preview_js(output_dir):
-    """Inject gist preview JavaScript into all HTML files in the output directory."""
+    """Inject gist preview JavaScript into all HTML files in the output directory.
+
+    Idempotent: skips files that already contain the script.
+    """
     output_dir = Path(output_dir)
     for html_file in output_dir.glob("*.html"):
         content = html_file.read_text(encoding="utf-8")
-        # Insert the gist preview JS before the closing </body> tag
+        if GIST_PREVIEW_JS in content:
+            continue
         if "</body>" in content:
             content = content.replace(
                 "</body>", f"<script>{GIST_PREVIEW_JS}</script>\n</body>"
@@ -2218,6 +2222,37 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
     if open_browser:
         index_url = (output / "index.html").resolve().as_uri()
         webbrowser.open(index_url)
+
+
+@cli.command("publish")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--public",
+    is_flag=True,
+    help="Create a public gist (default is secret).",
+)
+@click.option(
+    "--open",
+    "open_browser",
+    is_flag=True,
+    help="Open the gist preview URL in your default browser.",
+)
+def publish_cmd(directory, public, open_browser):
+    """Publish an existing HTML transcript directory as a GitHub Gist."""
+    output = Path(directory)
+    html_files = list(output.glob("*.html"))
+    if not html_files:
+        raise click.ClickException(f"No HTML files found in {output.resolve()}")
+
+    inject_gist_preview_js(output)
+    click.echo("Creating GitHub gist...")
+    gist_id, gist_url = create_gist(output, public=public)
+    preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+    click.echo(f"Gist: {gist_url}")
+    click.echo(f"Preview: {preview_url}")
+
+    if open_browser:
+        webbrowser.open(preview_url)
 
 
 def main():
