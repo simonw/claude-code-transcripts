@@ -18,20 +18,12 @@
     // Show search box (progressive enhancement)
     searchBox.style.display = 'flex';
 
-    // Gist preview support - detect if we're on gisthost.github.io or gistpreview.github.io
-    var hostname = window.location.hostname;
-    var isGistPreview = hostname === 'gisthost.github.io' || hostname === 'gistpreview.github.io';
-    var gistId = null;
+    // Gist preview support - detect by query string pattern: ?<hex-gist-id>/...
+    var gistMatch = window.location.search.match(/^\?([a-f0-9]{20,})(\/|$)/i);
+    var isGistPreview = !!gistMatch;
+    var gistId = gistMatch ? gistMatch[1] : null;
     var gistOwner = null;
     var gistInfoLoaded = false;
-
-    if (isGistPreview) {
-        // Extract gist ID from URL query string like ?78a436a8a9e7a2e603738b8193b95410/index.html
-        var queryMatch = window.location.search.match(/^\?([a-f0-9]+)/i);
-        if (queryMatch) {
-            gistId = queryMatch[1];
-        }
-    }
 
     async function loadGistInfo() {
         if (!isGistPreview || !gistId || gistInfoLoaded) return;
