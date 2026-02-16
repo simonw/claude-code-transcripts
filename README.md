@@ -211,6 +211,21 @@ claude-code-transcripts all -o ./my-archive
 claude-code-transcripts all --include-agents
 ```
 
+### Publishing an existing directory
+
+If you've already generated HTML transcripts and want to publish them later:
+
+```bash
+claude-code-transcripts publish <directory>
+```
+
+This uploads the directory to a GitHub Gist and prints a shareable preview URL.
+
+Options:
+
+- `--public` — Create a public gist (default is secret/unlisted)
+- `--open` — Open the preview URL in your browser
+
 ## Development
 
 To contribute to this tool, first checkout the code. You can run the tests using `uv run`:
