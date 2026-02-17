@@ -657,6 +657,89 @@ class TestCreateGist:
 
         assert "gh CLI not found" in str(exc_info.value)
 
+    def test_creates_title_file_for_gist(self, output_dir, monkeypatch):
+        """Test that a title .md file is created and included in the gist."""
+        import subprocess
+
+        (output_dir / "index.html").write_text(
+            "<html><body>Index</body></html>", encoding="utf-8"
+        )
+
+        captured_cmd = []
+
+        def mock_run(*args, **kwargs):
+            captured_cmd.extend(args[0])
+            return subprocess.CompletedProcess(
+                args=args[0],
+                returncode=0,
+                stdout="https://gist.github.com/testuser/abc123\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        create_gist(output_dir, title="My Cool Session")
+
+        # The title file should be created in the output directory
+        title_file = output_dir / "My Cool Session.md"
+        assert title_file.exists()
+        assert title_file.read_text() == "Empty file to name gist"
+
+        # The title file should be included in the gh command
+        assert str(title_file) in captured_cmd
+
+    def test_title_file_not_created_without_title(self, output_dir, monkeypatch):
+        """Test that no title file is created when title is not provided."""
+        import subprocess
+
+        (output_dir / "index.html").write_text(
+            "<html><body>Index</body></html>", encoding="utf-8"
+        )
+
+        def mock_run(*args, **kwargs):
+            return subprocess.CompletedProcess(
+                args=args[0],
+                returncode=0,
+                stdout="https://gist.github.com/testuser/abc123\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        create_gist(output_dir)
+
+        # No .md files should exist
+        md_files = list(output_dir.glob("*.md"))
+        assert len(md_files) == 0
+
+    def test_title_file_sanitizes_filename(self, output_dir, monkeypatch):
+        """Test that special characters in title are sanitized for filename."""
+        import subprocess
+
+        (output_dir / "index.html").write_text(
+            "<html><body>Index</body></html>", encoding="utf-8"
+        )
+
+        def mock_run(*args, **kwargs):
+            return subprocess.CompletedProcess(
+                args=args[0],
+                returncode=0,
+                stdout="https://gist.github.com/testuser/abc123\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        create_gist(output_dir, title="Fix bug: handle /path/to/file")
+
+        # Should sanitize slashes and colons
+        md_files = list(output_dir.glob("*.md"))
+        assert len(md_files) == 1
+        assert md_files[0].read_text() == "Empty file to name gist"
+        # Filename should not contain path separators
+        assert "/" not in md_files[0].name
+        assert "\\" not in md_files[0].name
+
 
 class TestSessionGistOption:
     """Tests for the session command --gist option."""
@@ -976,6 +1059,59 @@ class TestImportGistOption:
         assert "Creating GitHub gist" in result.output
         assert "gist.github.com" in result.output
         assert "gisthost.github.io" in result.output
+
+    def test_import_gist_creates_title_file(self, httpx_mock, monkeypatch, tmp_path):
+        """Test that web --gist creates a title .md file from the session data."""
+        from click.testing import CliRunner
+        from claude_code_transcripts import cli
+        import subprocess
+
+        # Load sample session to mock API response
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        with open(fixture_path) as f:
+            session_data = json.load(f)
+
+        httpx_mock.add_response(
+            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
+            json=session_data,
+        )
+
+        captured_cmd = []
+
+        def mock_run(*args, **kwargs):
+            captured_cmd.extend(args[0])
+            return subprocess.CompletedProcess(
+                args=args[0],
+                returncode=0,
+                stdout="https://gist.github.com/testuser/def456\n",
+                stderr="",
+            )
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        monkeypatch.setattr(
+            "claude_code_transcripts.tempfile.gettempdir", lambda: str(tmp_path)
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "web",
+                "test-session-id",
+                "--token",
+                "test-token",
+                "--org-uuid",
+                "test-org",
+                "--gist",
+            ],
+        )
+
+        assert result.exit_code == 0
+
+        # A .md title file should have been included in the gh command
+        md_files = [f for f in captured_cmd if f.endswith(".md")]
+        assert len(md_files) == 1, f"Expected 1 .md file in command, got: {md_files}"
 
 
 class TestVersionOption:
