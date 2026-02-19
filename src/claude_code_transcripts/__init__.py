@@ -1286,6 +1286,194 @@ def create_gist(output_dir, public=False):
         )
 
 
+def get_github_username():
+    """Get authenticated GitHub username via gh CLI.
+
+    Returns the username of the currently authenticated user.
+    Raises click.ClickException if gh CLI is not found or not authenticated.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr.strip() if e.stderr else str(e)
+        if "Not logged in" in error_msg or "not logged in" in error_msg.lower():
+            raise click.ClickException(
+                "Not authenticated with GitHub. Run 'gh auth login' first."
+            )
+        raise click.ClickException(f"Failed to get GitHub username: {error_msg}")
+    except FileNotFoundError:
+        raise click.ClickException(
+            "gh CLI not found. Install it from https://cli.github.com/ and run 'gh auth login'."
+        )
+
+
+def generate_session_slug(title, timestamp):
+    """Generate a URL-safe slug from session title and timestamp.
+
+    Args:
+        title: Session title (e.g., "Fix auth bug")
+        timestamp: ISO timestamp (e.g., "2025-01-15T10:30:00.000Z")
+
+    Returns:
+        A slug like "2025-01-15-fix-auth-bug"
+    """
+    # Extract date from timestamp
+    if timestamp:
+        try:
+            date_part = timestamp[:10]  # "2025-01-15"
+        except (TypeError, IndexError):
+            date_part = datetime.now().strftime("%Y-%m-%d")
+    else:
+        date_part = datetime.now().strftime("%Y-%m-%d")
+
+    # Convert title to lowercase and replace non-alphanumeric with hyphens
+    slug_title = re.sub(r"[^a-z0-9]+", "-", title.lower())
+    # Remove leading/trailing hyphens
+    slug_title = slug_title.strip("-")
+    # Collapse multiple hyphens
+    slug_title = re.sub(r"-+", "-", slug_title)
+
+    # Truncate to reasonable length
+    max_title_len = 45  # Leave room for date prefix
+    if len(slug_title) > max_title_len:
+        slug_title = slug_title[:max_title_len].rstrip("-")
+
+    return f"{date_part}-{slug_title}"
+
+
+def publish_to_github(output_dir, repo, branch, session_title, session_timestamp):
+    """Publish HTML files to a GitHub repository for GitHub Pages.
+
+    Args:
+        output_dir: Directory containing HTML files to publish.
+        repo: Target repository (owner/repo format).
+        branch: Target branch (e.g., "gh-pages").
+        session_title: Title of the session for the folder name.
+        session_timestamp: Timestamp of the session for the folder name.
+
+    Returns:
+        The URL where the files will be accessible via GitHub Pages.
+
+    Raises:
+        click.ClickException: If publishing fails.
+    """
+    import base64
+
+    output_dir = Path(output_dir)
+
+    # Get current user
+    username = get_github_username()
+
+    # Generate session slug
+    slug = generate_session_slug(session_title, session_timestamp)
+
+    # Build the path: username/slug/
+    base_path = f"{username}/{slug}"
+
+    # Parse owner and repo name
+    if "/" not in repo:
+        raise click.ClickException(f"Invalid repo format: {repo}. Use 'owner/repo'.")
+    owner, repo_name = repo.split("/", 1)
+
+    # Upload each HTML file
+    html_files = list(output_dir.glob("*.html"))
+    if not html_files:
+        raise click.ClickException("No HTML files found to publish.")
+
+    click.echo(f"Publishing to {repo}...")
+
+    for html_file in sorted(html_files):
+        file_path = f"{base_path}/{html_file.name}"
+        content = html_file.read_text(encoding="utf-8")
+        content_base64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+
+        # Check if file already exists (to get SHA for update)
+        # Must specify the branch with ref= parameter
+        sha = None
+        try:
+            result = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    f"/repos/{owner}/{repo_name}/contents/{file_path}?ref={branch}",
+                    "--jq",
+                    ".sha",
+                    "-H",
+                    "Accept: application/vnd.github+json",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            sha = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            # File doesn't exist yet, that's fine
+            pass
+
+        # Build the request payload as JSON and pass via --input
+        # This avoids command-line length limits for large files
+        payload = {
+            "message": f"Add {html_file.name} for session {slug}",
+            "content": content_base64,
+            "branch": branch,
+        }
+        if sha:
+            payload["sha"] = sha
+
+        # Write payload to temp file to avoid command-line length limits
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmp:
+            json.dump(payload, tmp)
+            tmp_path = tmp.name
+
+        try:
+            cmd = [
+                "gh",
+                "api",
+                "-X",
+                "PUT",
+                f"/repos/{owner}/{repo_name}/contents/{file_path}",
+                "--input",
+                tmp_path,
+            ]
+
+            subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            click.echo(f"  Uploaded {html_file.name}")
+        except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip() if e.stderr else str(e)
+            if "Could not resolve to a Repository" in error_msg:
+                raise click.ClickException(
+                    f"Repository {repo} not found or you don't have access."
+                )
+            if "No commit found for the ref" in error_msg:
+                raise click.ClickException(
+                    f"Branch '{branch}' does not exist in {repo}."
+                )
+            raise click.ClickException(
+                f"Failed to upload {html_file.name}: {error_msg}"
+            )
+        finally:
+            # Clean up temp file
+            Path(tmp_path).unlink(missing_ok=True)
+
+    # Generate the GitHub Pages URL
+    # Standard GitHub Pages: https://{owner}.github.io/{repo}/{path}/
+    # GHE Pages: varies by installation
+    pages_url = f"https://{owner}.github.io/{repo_name}/{base_path}/"
+
+    return pages_url
+
+
 def generate_pagination_html(current_page, total_pages):
     return _macros.pagination(current_page, total_pages)
 
@@ -1516,7 +1704,35 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--publish-to-github",
+    "publish_github",
+    is_flag=True,
+    help="Publish HTML to a GitHub Pages repository.",
+)
+@click.option(
+    "--publish-to-github-repo",
+    "publish_github_repo",
+    help="Target repository for GitHub Pages publishing (owner/repo).",
+)
+@click.option(
+    "--publish-to-github-branch",
+    "publish_github_branch",
+    default="gh-pages",
+    help="Target branch for GitHub Pages publishing (default: gh-pages).",
+)
+def local_cmd(
+    output,
+    output_auto,
+    repo,
+    gist,
+    include_json,
+    open_browser,
+    limit,
+    publish_github,
+    publish_github_repo,
+    publish_github_branch,
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1588,6 +1804,35 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
+
+    if publish_github:
+        # Prompt for repo if not provided
+        if not publish_github_repo:
+            publish_github_repo = questionary.text("GitHub repo (owner/repo):").ask()
+            if not publish_github_repo:
+                click.echo("No repository specified, skipping publish.")
+            else:
+                # Also ask for branch since they're in interactive mode
+                branch_answer = questionary.text(
+                    "Branch:", default=publish_github_branch
+                ).ask()
+                if branch_answer:
+                    publish_github_branch = branch_answer
+
+        if publish_github_repo:
+            # Get session title and timestamp for the slug
+            session_summary = get_session_summary(session_file)
+            session_mtime = datetime.fromtimestamp(session_file.stat().st_mtime)
+            session_timestamp = session_mtime.isoformat()
+
+            pages_url = publish_to_github(
+                output_dir=output,
+                repo=publish_github_repo,
+                branch=publish_github_branch,
+                session_title=session_summary,
+                session_timestamp=session_timestamp,
+            )
+            click.echo(f"Published: {pages_url}")
 
     if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
@@ -1668,7 +1913,35 @@ def fetch_url_to_tempfile(url):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
+@click.option(
+    "--publish-to-github",
+    "publish_github",
+    is_flag=True,
+    help="Publish HTML to a GitHub Pages repository.",
+)
+@click.option(
+    "--publish-to-github-repo",
+    "publish_github_repo",
+    help="Target repository for GitHub Pages publishing (owner/repo).",
+)
+@click.option(
+    "--publish-to-github-branch",
+    "publish_github_branch",
+    default="gh-pages",
+    help="Target branch for GitHub Pages publishing (default: gh-pages).",
+)
+def json_cmd(
+    json_file,
+    output,
+    output_auto,
+    repo,
+    gist,
+    include_json,
+    open_browser,
+    publish_github,
+    publish_github_repo,
+    publish_github_branch,
+):
     """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
@@ -1719,6 +1992,35 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
+
+    if publish_github:
+        # Prompt for repo if not provided
+        if not publish_github_repo:
+            publish_github_repo = questionary.text("GitHub repo (owner/repo):").ask()
+            if not publish_github_repo:
+                click.echo("No repository specified, skipping publish.")
+            else:
+                # Also ask for branch since they're in interactive mode
+                branch_answer = questionary.text(
+                    "Branch:", default=publish_github_branch
+                ).ask()
+                if branch_answer:
+                    publish_github_branch = branch_answer
+
+        if publish_github_repo:
+            # Get session title and timestamp for the slug
+            session_summary = get_session_summary(json_file_path)
+            session_mtime = datetime.fromtimestamp(json_file_path.stat().st_mtime)
+            session_timestamp = session_mtime.isoformat()
+
+            pages_url = publish_to_github(
+                output_dir=output,
+                repo=publish_github_repo,
+                branch=publish_github_branch,
+                session_title=session_summary,
+                session_timestamp=session_timestamp,
+            )
+            click.echo(f"Published: {pages_url}")
 
     if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
@@ -1983,6 +2285,23 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
+@click.option(
+    "--publish-to-github",
+    "publish_github",
+    is_flag=True,
+    help="Publish HTML to a GitHub Pages repository.",
+)
+@click.option(
+    "--publish-to-github-repo",
+    "publish_github_repo",
+    help="Target repository for GitHub Pages publishing (owner/repo).",
+)
+@click.option(
+    "--publish-to-github-branch",
+    "publish_github_branch",
+    default="gh-pages",
+    help="Target branch for GitHub Pages publishing (default: gh-pages).",
+)
 def web_cmd(
     session_id,
     output,
@@ -1993,6 +2312,9 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    publish_github,
+    publish_github_repo,
+    publish_github_branch,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -2090,6 +2412,34 @@ def web_cmd(
         preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
         click.echo(f"Gist: {gist_url}")
         click.echo(f"Preview: {preview_url}")
+
+    if publish_github:
+        # Prompt for repo if not provided
+        if not publish_github_repo:
+            publish_github_repo = questionary.text("GitHub repo (owner/repo):").ask()
+            if not publish_github_repo:
+                click.echo("No repository specified, skipping publish.")
+            else:
+                # Also ask for branch since they're in interactive mode
+                branch_answer = questionary.text(
+                    "Branch:", default=publish_github_branch
+                ).ask()
+                if branch_answer:
+                    publish_github_branch = branch_answer
+
+        if publish_github_repo:
+            # Get session title and timestamp for the slug
+            session_title = session_data.get("title", "Untitled")
+            session_timestamp = session_data.get("created_at", "")
+
+            pages_url = publish_to_github(
+                output_dir=output,
+                repo=publish_github_repo,
+                branch=publish_github_branch,
+                session_title=session_title,
+                session_timestamp=session_timestamp,
+            )
+            click.echo(f"Published: {pages_url}")
 
     if open_browser or auto_open:
         index_url = (output / "index.html").resolve().as_uri()
