@@ -506,35 +506,82 @@ class CredentialsError(Exception):
 
 
 def get_access_token_from_keychain():
-    """Get access token from macOS keychain.
+    """Get access token from system credentials.
 
-    Returns the access token or None if not found.
+    On macOS, retrieves from keychain.
+    On Linux, retrieves from ~/.claude/.credentials.json.
+
+    Returns the access token or None if not found/expired.
     Raises CredentialsError with helpful message on failure.
     """
-    if platform.system() != "Darwin":
-        return None
+    system = platform.system()
 
-    try:
-        result = subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-a",
-                os.environ.get("USER", ""),
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
+    if system == "Darwin":
+        # macOS: use keychain
+        try:
+            result = subprocess.run(
+                [
+                    "security",
+                    "find-generic-password",
+                    "-a",
+                    os.environ.get("USER", ""),
+                    "-s",
+                    "Claude Code-credentials",
+                    "-w",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                return None
+
+            # Parse the JSON to get the access token
+            creds = json.loads(result.stdout.strip())
+            return creds.get("claudeAiOauth", {}).get("accessToken")
+        except (json.JSONDecodeError, subprocess.SubprocessError):
             return None
 
-        # Parse the JSON to get the access token
-        creds = json.loads(result.stdout.strip())
-        return creds.get("claudeAiOauth", {}).get("accessToken")
-    except (json.JSONDecodeError, subprocess.SubprocessError):
+    elif system == "Linux":
+        # Linux: read from ~/.claude/.credentials.json
+        creds_path = Path.home() / ".claude" / ".credentials.json"
+        if not creds_path.exists():
+            return None
+
+        try:
+            with open(creds_path, "r") as f:
+                creds = json.load(f)
+
+            oauth_data = creds.get("claudeAiOauth", {})
+            access_token = oauth_data.get("accessToken")
+            expires_at = oauth_data.get("expiresAt")
+
+            # If no access token, return None
+            if not access_token:
+                return None
+
+            # Check if token is expired (if expiresAt is provided)
+            if expires_at:
+                try:
+                    # Parse ISO format datetime (e.g., "2099-12-31T23:59:59Z")
+                    expiry_time = datetime.fromisoformat(
+                        expires_at.replace("Z", "+00:00")
+                    )
+                    current_time = datetime.now(expiry_time.tzinfo)
+
+                    if current_time >= expiry_time:
+                        # Token is expired
+                        return None
+                except (ValueError, AttributeError):
+                    # If we can't parse the expiration date, treat as no expiration
+                    pass
+
+            return access_token
+
+        except (json.JSONDecodeError, IOError):
+            return None
+
+    else:
+        # Unsupported platform
         return None
 
 
