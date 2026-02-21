@@ -1983,6 +1983,12 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
+@click.option(
+    "--list",
+    "list_only",
+    is_flag=True,
+    help="List available sessions and exit without converting.",
+)
 def web_cmd(
     session_id,
     output,
@@ -1993,6 +1999,7 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    list_only,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -2026,6 +2033,44 @@ def web_cmd(
             sessions = filter_sessions_by_repo(sessions, repo)
             if not sessions:
                 raise click.ClickException(f"No sessions found for repo: {repo}")
+
+        # If --list flag is set, display sessions and exit
+        if list_only:
+            click.echo(f"\nFound {len(sessions)} session(s):\n")
+            click.echo("-" * 100)
+
+            # Group by repo
+            by_repo = {}
+            for session in sessions:
+                session_repo = session.get("repo") or "(no repo)"
+                if session_repo not in by_repo:
+                    by_repo[session_repo] = []
+                by_repo[session_repo].append(session)
+
+            # Display sessions grouped by repo
+            for session_repo in sorted(by_repo.keys()):
+                click.echo(f"\n{session_repo}")
+                click.echo("-" * 100)
+                for s in by_repo[session_repo]:
+                    sid = s.get("id", "N/A")
+                    title = s.get("title", "(no title)")
+                    created_at = s.get("created_at", "")
+
+                    # Format the date
+                    date_str = created_at[:19] if created_at else "N/A"
+
+                    # Truncate title if too long
+                    if len(title) > 60:
+                        title = title[:57] + "..."
+
+                    click.echo(f"  {sid}  {date_str}  {title}")
+
+            click.echo("\n" + "-" * 100)
+            click.echo(f"\nTotal: {len(sessions)} session(s)")
+            click.echo(
+                "\nTo export a session, run: claude-code-transcripts web <session-id>"
+            )
+            return
 
         # Build choices for questionary
         choices = []
