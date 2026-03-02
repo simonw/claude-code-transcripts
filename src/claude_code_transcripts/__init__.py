@@ -1484,6 +1484,117 @@ def write_pages_to_dir(pages, output_dir):
         (output_dir / filename).write_text(content, encoding="utf-8")
 
 
+def import_session_file_to_db(
+    session_path, project_name=None, project_key=None, db_path=None, github_repo=None
+):
+    """Import a single session file into the SQLite database.
+
+    Returns (session_id, project_name, result) where result is the render_session_pages output.
+    Skips if already present. Returns None for result if skipped.
+    """
+    from claude_code_transcripts.db import (
+        get_db,
+        session_exists,
+        import_session,
+        DEFAULT_DB_PATH,
+    )
+
+    session_path = Path(session_path)
+    session_id = session_path.stem
+
+    if project_key is None:
+        project_key = session_path.parent.name
+    if project_name is None:
+        project_name = get_project_display_name(project_key)
+
+    conn = get_db(db_path)
+    try:
+        if session_exists(conn, session_id):
+            return session_id, project_name, None
+
+        session_json = session_path.read_text(encoding="utf-8")
+        data = parse_session_file(session_path)
+        result = render_session_pages(data, github_repo=github_repo)
+
+        loglines = data.get("loglines", [])
+        created_at = loglines[0].get("timestamp") if loglines else None
+        summary = get_session_summary(session_path)
+        stat = session_path.stat()
+
+        import_session(
+            conn,
+            session_id=session_id,
+            project_name=project_name,
+            project_key=project_key,
+            summary=summary,
+            session_json=session_json,
+            pages=result["pages"],
+            meta=result["meta"],
+            file_mtime=stat.st_mtime,
+            file_size=stat.st_size,
+            created_at=created_at,
+        )
+        return session_id, project_name, result
+    finally:
+        conn.close()
+
+
+def import_session_data_to_db(
+    session_data,
+    session_id,
+    project_name="web",
+    project_key="web",
+    db_path=None,
+    github_repo=None,
+):
+    """Import session data dict into the SQLite database.
+
+    Returns (session_id, project_name, result) where result is the render_session_pages output.
+    Skips if already present. Returns None for result if skipped.
+    """
+    from claude_code_transcripts.db import (
+        get_db,
+        session_exists,
+        import_session,
+        DEFAULT_DB_PATH,
+    )
+
+    conn = get_db(db_path)
+    try:
+        if session_exists(conn, session_id):
+            return session_id, project_name, None
+
+        result = render_session_pages(session_data, github_repo=github_repo)
+
+        loglines = session_data.get("loglines", [])
+        created_at = loglines[0].get("timestamp") if loglines else None
+
+        # Extract summary from first user message
+        summary = None
+        for entry in loglines:
+            if entry.get("type") == "user":
+                content = entry.get("message", {}).get("content", "")
+                text = extract_text_from_content(content)
+                if text:
+                    summary = text[:200]
+                    break
+
+        import_session(
+            conn,
+            session_id=session_id,
+            project_name=project_name,
+            project_key=project_key,
+            summary=summary,
+            session_json=json.dumps(session_data),
+            pages=result["pages"],
+            meta=result["meta"],
+            created_at=created_at,
+        )
+        return session_id, project_name, result
+    finally:
+        conn.close()
+
+
 def generate_html(json_path, output_dir, github_repo=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True)
@@ -1601,42 +1712,52 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
 
     session_file = selected
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / session_file.stem
-    elif output is None:
-        output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
+    # If -o is specified, use legacy file-based output
+    use_file_output = output is not None or output_auto or gist
 
-    output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
+    if use_file_output:
+        auto_open = output is None and not gist and not output_auto
+        if output_auto:
+            parent_dir = Path(output) if output else Path(".")
+            output = parent_dir / session_file.stem
+        elif output is None:
+            output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
+        output = Path(output)
+        generate_html(session_file, output, github_repo=repo)
+        click.echo(f"Output: {output.resolve()}")
 
-    # Copy JSONL file to output directory if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / session_file.name
-        shutil.copy(session_file, json_dest)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / session_file.name
+            shutil.copy(session_file, json_dest)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
 
-    if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        if gist:
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
+    else:
+        # Default: import to SQLite
+        session_id, project_name, result = import_session_file_to_db(
+            session_file, github_repo=repo
+        )
+        if result is None:
+            click.echo(f"Session {session_id} already in database.")
+        else:
+            click.echo(f"Imported {session_id} into database.")
+        click.echo(f"View: http://127.0.0.1:8080/{project_name}/{session_id}/")
+
+        if open_browser:
+            webbrowser.open(f"http://127.0.0.1:8080/{project_name}/{session_id}/")
 
 
 def is_url(path):
@@ -1720,54 +1841,62 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         click.echo(f"Fetching {json_file}...")
         temp_file = fetch_url_to_tempfile(json_file)
         json_file_path = temp_file
-        # Use URL path for naming
         url_name = Path(json_file.split("?")[0]).stem or "session"
     else:
-        # Validate that local file exists
         json_file_path = Path(json_file)
         if not json_file_path.exists():
             raise click.ClickException(f"File not found: {json_file}")
         url_name = None
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / (url_name or json_file_path.stem)
-    elif output is None:
-        output = (
-            Path(tempfile.gettempdir())
-            / f"claude-session-{url_name or json_file_path.stem}"
+    # If -o is specified, use legacy file-based output
+    use_file_output = output is not None or output_auto or gist
+
+    if use_file_output:
+        auto_open = output is None and not gist and not output_auto
+        if output_auto:
+            parent_dir = Path(output) if output else Path(".")
+            output = parent_dir / (url_name or json_file_path.stem)
+        elif output is None:
+            output = (
+                Path(tempfile.gettempdir())
+                / f"claude-session-{url_name or json_file_path.stem}"
+            )
+
+        output = Path(output)
+        generate_html(json_file_path, output, github_repo=repo)
+        click.echo(f"Output: {output.resolve()}")
+
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / json_file_path.name
+            shutil.copy(json_file_path, json_dest)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
+
+        if gist:
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
+
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
+    else:
+        # Default: import to SQLite
+        session_id, project_name, result = import_session_file_to_db(
+            json_file_path, github_repo=repo
         )
+        if result is None:
+            click.echo(f"Session {session_id} already in database.")
+        else:
+            click.echo(f"Imported {session_id} into database.")
+        click.echo(f"View: http://127.0.0.1:8080/{project_name}/{session_id}/")
 
-    output = Path(output)
-    generate_html(json_file_path, output, github_repo=repo)
-
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
-
-    # Copy JSON file to output directory if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / json_file_path.name
-        shutil.copy(json_file_path, json_dest)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
-
-    if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
-
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        if open_browser:
+            webbrowser.open(f"http://127.0.0.1:8080/{project_name}/{session_id}/")
 
 
 def resolve_credentials(token, org_uuid):
@@ -1954,44 +2083,55 @@ def web_cmd(
     except httpx.RequestError as e:
         raise click.ClickException(f"Network error: {e}")
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
-    auto_open = output is None and not gist and not output_auto
-    if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
-        parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / session_id
-    elif output is None:
-        output = Path(tempfile.gettempdir()) / f"claude-session-{session_id}"
+    # If -o is specified, use legacy file-based output
+    use_file_output = output is not None or output_auto or gist
 
-    output = Path(output)
-    click.echo(f"Generating HTML in {output}/...")
-    generate_html_from_session_data(session_data, output, github_repo=repo)
+    if use_file_output:
+        auto_open = output is None and not gist and not output_auto
+        if output_auto:
+            parent_dir = Path(output) if output else Path(".")
+            output = parent_dir / session_id
+        elif output is None:
+            output = Path(tempfile.gettempdir()) / f"claude-session-{session_id}"
 
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
+        output = Path(output)
+        click.echo(f"Generating HTML in {output}/...")
+        generate_html_from_session_data(session_data, output, github_repo=repo)
+        click.echo(f"Output: {output.resolve()}")
 
-    # Save JSON session data if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / f"{session_id}.json"
-        with open(json_dest, "w") as f:
-            json.dump(session_data, f, indent=2)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / f"{session_id}.json"
+            with open(json_dest, "w") as f:
+                json.dump(session_data, f, indent=2)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
 
-    if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        if gist:
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
+    else:
+        # Default: import to SQLite
+        project_name = "web"
+        sid, project_name, result = import_session_data_to_db(
+            session_data, session_id, project_name=project_name, github_repo=repo
+        )
+        if result is None:
+            click.echo(f"Session {session_id} already in database.")
+        else:
+            click.echo(f"Imported {session_id} into database.")
+        click.echo(f"View: http://127.0.0.1:8080/{project_name}/{session_id}/")
+
+        if open_browser:
+            webbrowser.open(f"http://127.0.0.1:8080/{project_name}/{session_id}/")
 
 
 @cli.command("all")

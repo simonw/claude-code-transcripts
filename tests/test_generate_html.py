@@ -1317,7 +1317,7 @@ class TestLocalSessionCLI:
 
         assert result.exit_code == 0
         assert "Loading local sessions" in result.output
-        assert "Generated" in result.output
+        assert "Imported" in result.output or "already in database" in result.output
 
     def test_no_args_runs_local_command(self, tmp_path, monkeypatch):
         """Test that running with no arguments runs local command."""
