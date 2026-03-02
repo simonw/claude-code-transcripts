@@ -2118,6 +2118,55 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         webbrowser.open(index_url)
 
 
+@cli.command("serve")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(),
+    help="SQLite database path (default: ~/.claude/transcripts.db).",
+)
+@click.option(
+    "-p",
+    "--port",
+    default=8080,
+    help="Port number (default: 8080).",
+)
+@click.option(
+    "--host",
+    default="127.0.0.1",
+    help="Bind address (default: 127.0.0.1).",
+)
+def serve_cmd(db_path, port, host):
+    """Serve transcripts from the SQLite database via HTTP.
+
+    Starts a local web server that serves transcript HTML pages
+    directly from the SQLite database.
+    """
+    from http.server import HTTPServer
+    from claude_code_transcripts.db import get_db, DEFAULT_DB_PATH
+    from claude_code_transcripts.serve import make_handler
+
+    if db_path is None:
+        db_path = DEFAULT_DB_PATH
+    db_path = Path(db_path)
+
+    if not db_path.exists():
+        raise click.ClickException(
+            f"Database not found: {db_path}\nRun 'claude-code-transcripts sync' first."
+        )
+
+    click.echo(f"Serving transcripts from {db_path}")
+    click.echo(f"http://{host}:{port}/")
+
+    handler = make_handler(db_path)
+    server = HTTPServer((host, port), handler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        click.echo("\nShutting down.")
+        server.shutdown()
+
+
 @cli.command("sync")
 @click.option(
     "-s",
