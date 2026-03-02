@@ -2118,5 +2118,121 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         webbrowser.open(index_url)
 
 
+@cli.command("sync")
+@click.option(
+    "-s",
+    "--source",
+    type=click.Path(),
+    help="Source directory containing Claude projects (default: ~/.claude/projects).",
+)
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(),
+    help="SQLite database path (default: ~/.claude/transcripts.db).",
+)
+@click.option(
+    "--include-agents",
+    is_flag=True,
+    help="Include agent-* session files (excluded by default).",
+)
+@click.option(
+    "-q",
+    "--quiet",
+    is_flag=True,
+    help="Suppress progress output (only show final summary).",
+)
+def sync_cmd(source, db_path, include_agents, quiet):
+    """Sync local Claude Code sessions into the SQLite database.
+
+    Scans ~/.claude/projects for JSONL session files, renders HTML,
+    and stores everything in a SQLite database. Sessions already in the
+    database are skipped (dedup by session ID).
+    """
+    from claude_code_transcripts.db import get_db, session_exists, import_session
+
+    # Default source folder
+    if source is None:
+        source = Path.home() / ".claude" / "projects"
+    else:
+        source = Path(source)
+
+    if not source.exists():
+        click.echo("No sessions found.")
+        return
+
+    if not quiet:
+        click.echo(f"Scanning {source}...")
+
+    projects = find_all_sessions(source, include_agents=include_agents)
+
+    if not projects:
+        click.echo("No sessions found.")
+        return
+
+    # Open/create database
+    conn = get_db(db_path)
+
+    new_count = 0
+    skip_count = 0
+    fail_count = 0
+    total_sessions = sum(len(p["sessions"]) for p in projects)
+
+    for project in projects:
+        for session in project["sessions"]:
+            session_id = session["path"].stem
+
+            if session_exists(conn, session_id):
+                skip_count += 1
+                continue
+
+            try:
+                # Read raw JSONL content
+                session_json = session["path"].read_text(encoding="utf-8")
+
+                # Parse and render HTML
+                data = parse_session_file(session["path"])
+                result = render_session_pages(data)
+
+                # Extract first timestamp as created_at
+                loglines = data.get("loglines", [])
+                created_at = None
+                if loglines:
+                    created_at = loglines[0].get("timestamp")
+
+                stat = session["path"].stat()
+
+                import_session(
+                    conn,
+                    session_id=session_id,
+                    project_name=project["name"],
+                    project_key=session["path"].parent.name,
+                    summary=session["summary"],
+                    session_json=session_json,
+                    pages=result["pages"],
+                    meta=result["meta"],
+                    file_mtime=stat.st_mtime,
+                    file_size=stat.st_size,
+                    created_at=created_at,
+                )
+                new_count += 1
+
+                if not quiet:
+                    click.echo(f"  Imported {project['name']}/{session_id}")
+            except Exception as e:
+                fail_count += 1
+                if not quiet:
+                    click.echo(f"  Failed {project['name']}/{session_id}: {e}")
+
+    conn.close()
+
+    parts = [f"Synced {new_count} new sessions"]
+    if skip_count:
+        parts.append(f"{skip_count} already present")
+    if fail_count:
+        parts.append(f"{fail_count} failed")
+    click.echo(", ".join(parts) + ".")
+
+
 def main():
     cli()
