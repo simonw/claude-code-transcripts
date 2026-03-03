@@ -974,15 +974,22 @@ def render_message(log_type, message_json, timestamp):
 CSS = """
 :root { --bg-color: #f5f5f5; --card-bg: #ffffff; --user-bg: #e3f2fd; --user-border: #1976d2; --assistant-bg: #f5f5f5; --assistant-border: #9e9e9e; --thinking-bg: #fff8e1; --thinking-border: #ffc107; --thinking-text: #666; --tool-bg: #f3e5f5; --tool-border: #9c27b0; --tool-result-bg: #e8f5e9; --tool-error-bg: #ffebee; --text-color: #212121; --text-muted: #757575; --code-bg: #263238; --code-text: #aed581; }
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 16px; line-height: 1.6; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 16px; padding-right: 230px; line-height: 1.6; }
 .container { max-width: 800px; margin: 0 auto; }
-h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom: 2px solid var(--user-border); }
+h1 { font-size: 1.5rem; margin-bottom: 8px; }
+.session-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0; }
+.stat-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; background: var(--card-bg); border: 1px solid #e0e0e0; border-radius: 20px; font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+.stat-badge strong { color: var(--text-color); font-weight: 600; }
 .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 2px solid var(--user-border); padding-bottom: 8px; margin-bottom: 24px; }
 .header-row h1 { border-bottom: none; padding-bottom: 0; margin-bottom: 0; flex: 1; min-width: 200px; }
-.message { margin-bottom: 16px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.message.user { background: var(--user-bg); border-left: 4px solid var(--user-border); }
-.message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); }
-.message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; }
+.message { margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: box-shadow 0.15s, transform 0.15s; }
+.message:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.message.user { background: var(--user-bg); border-left: none; border-right: 4px solid var(--user-border); margin-left: 15%; position: relative; }
+.message.user .message-header { flex-direction: row-reverse; }
+.user-icon { width: 28px; height: 28px; border-radius: 50%; background: var(--user-border); color: white; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-icon svg { width: 16px; height: 16px; fill: white; }
+.message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); margin-right: 15%; }
+.message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; margin-right: 15%; }
 .tool-reply .role-label { color: #e65100; }
 .tool-reply .tool-result { background: transparent; padding: 0; margin: 0; }
 .tool-reply .tool-result .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, #fff8e1); }
@@ -1107,7 +1114,28 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .search-result-page { padding: 6px 12px; background: rgba(0,0,0,0.03); font-size: 0.8rem; color: var(--text-muted); border-bottom: 1px solid rgba(0,0,0,0.06); }
 .search-result-content { padding: 12px; }
 .search-result mark { background: #fff59d; padding: 1px 2px; border-radius: 2px; }
-@media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
+.filter-fab { position: fixed; bottom: 80px; right: 24px; width: 48px; height: 48px; border-radius: 50%; background: var(--user-bg); color: var(--user-border); border: 2px solid var(--user-border); box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; z-index: 1000; transition: all 0.2s; }
+.filter-fab svg { fill: var(--user-border); transition: fill 0.2s; }
+.filter-fab:hover { background: rgba(25,118,210,0.08); }
+.filter-fab.active { background: #0d47a1; border-color: #0d47a1; box-shadow: 0 2px 12px rgba(13,71,161,0.5); }
+.filter-fab.active svg { fill: white; }
+body.user-only .message:not(.user) { display: none; }
+body.user-only details.continuation > summary { display: none; }
+.message.user .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, var(--user-bg)); }
+.sidebar-nav { position: fixed; right: 16px; top: 45%; transform: translateY(-50%); z-index: 999; max-height: 70vh; overflow-y: auto; overflow-x: hidden; width: 200px; scrollbar-width: thin; scrollbar-color: #ccc transparent; }
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.sidebar-list { list-style: none; margin: 0; padding: 0; position: relative; }
+.sidebar-item { position: relative; padding: 6px 0 6px 16px; border-left: 2px solid #e0e0e0; cursor: pointer; transition: all 0.15s; }
+.sidebar-item:hover { border-left-color: #90caf9; }
+.sidebar-item.passed { border-left-color: var(--user-border); }
+.sidebar-item.active { border-left-color: var(--user-border); border-left-width: 3px; padding-left: 15px; }
+.sidebar-label { font-size: 0.72rem; line-height: 1.35; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: color 0.15s; }
+.sidebar-item:hover .sidebar-label { color: var(--text-color); }
+.sidebar-item.active .sidebar-label { color: var(--user-border); font-weight: 600; }
+.sidebar-item.passed .sidebar-label { color: #546e7a; }
+@media (max-width: 1100px) { .sidebar-nav { display: none; } body { padding-right: 16px; } }
+@media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } .message.user { margin-left: 5%; } .message.assistant { margin-right: 5%; } .message.tool-reply { margin-right: 5%; } }
 """
 
 JS = """
@@ -1132,13 +1160,96 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
     const content = wrapper.querySelector('.truncatable-content');
     const btn = wrapper.querySelector('.expand-btn');
     if (content.scrollHeight > 250) {
-        wrapper.classList.add('truncated');
+        wrapper.classList.add('expanded');
+        btn.textContent = 'Show less';
         btn.addEventListener('click', function() {
-            if (wrapper.classList.contains('truncated')) { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
-            else { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
+            if (wrapper.classList.contains('expanded')) { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
+            else { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
         });
     }
 });
+(function() {
+    var userOnly = false;
+    var fab = document.createElement('button');
+    fab.className = 'filter-fab';
+    fab.title = 'Show user messages only';
+    fab.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>';
+    fab.addEventListener('click', function() {
+        userOnly = !userOnly;
+        document.body.classList.toggle('user-only', userOnly);
+        fab.classList.toggle('active', userOnly);
+        fab.title = userOnly ? 'Show all messages' : 'Show user messages only';
+        document.querySelectorAll('details.continuation').forEach(function(d) {
+            if (userOnly) { d.dataset.wasOpen = d.open; d.open = true; }
+            else { d.open = d.dataset.wasOpen === 'true'; delete d.dataset.wasOpen; }
+        });
+        if (!userOnly) {
+            var hash = window.location.hash;
+            if (hash) {
+                var target = document.querySelector(hash);
+                if (target) {
+                    var details = target.closest('details');
+                    if (details && !details.open) { details.open = true; }
+                    setTimeout(function() { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+                }
+            }
+        }
+    });
+    document.body.appendChild(fab);
+    var userMsgs = document.querySelectorAll('.message.user');
+    if (userMsgs.length < 2) return;
+    var nav = document.createElement('nav');
+    nav.className = 'sidebar-nav';
+    var list = document.createElement('ul');
+    list.className = 'sidebar-list';
+    var items = [];
+    userMsgs.forEach(function(msg, i) {
+        var li = document.createElement('li');
+        li.className = 'sidebar-item';
+        var label = document.createElement('span');
+        label.className = 'sidebar-label';
+        var content = msg.querySelector('.message-content');
+        var preview = content ? content.textContent.trim().substring(0, 45) : 'Message ' + (i + 1);
+        if (preview.length >= 45) preview = preview.substring(0, 42) + '...';
+        label.textContent = preview;
+        li.title = content ? content.textContent.trim().substring(0, 120) : '';
+        li.appendChild(label);
+        li.addEventListener('click', function() {
+            var details = msg.closest('details');
+            if (details && !details.open) { details.open = true; }
+            if (msg.id) { history.replaceState(null, '', '#' + msg.id); }
+            setTimeout(function() { msg.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+            if (userOnly) { setActive(i); }
+        });
+        list.appendChild(li);
+        items.push({ el: li, msg: msg });
+    });
+    nav.appendChild(list);
+    document.body.appendChild(nav);
+    function setActive(idx) {
+        items.forEach(function(item, i) {
+            item.el.classList.toggle('passed', i < idx);
+            item.el.classList.toggle('active', i === idx);
+        });
+        var activeEl = nav.querySelector('.sidebar-item.active');
+        if (activeEl) { activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    }
+    function updateSidebar() {
+        if (userOnly) return;
+        var winH = window.innerHeight;
+        var activeIdx = -1;
+        for (var i = items.length - 1; i >= 0; i--) {
+            var rect = items[i].msg.getBoundingClientRect();
+            if (rect.top <= winH * 0.4) { activeIdx = i; break; }
+        }
+        setActive(activeIdx);
+    }
+    var ticking = false;
+    window.addEventListener('scroll', function() {
+        if (!ticking) { requestAnimationFrame(function() { updateSidebar(); ticking = false; }); ticking = true; }
+    });
+    updateSidebar();
+})();
 """
 
 # JavaScript to fix relative URLs when served via gisthost.github.io or gistpreview.github.io
@@ -1302,6 +1413,11 @@ def generate_html(json_path, output_dir, github_repo=None):
     # Load session file (supports both JSON and JSONL)
     data = parse_session_file(json_path)
 
+    # Extract session title from first user message
+    session_title = get_session_summary(json_path, max_length=80)
+    if session_title == "(no summary)":
+        session_title = "Claude Code transcript"
+
     loglines = data.get("loglines", [])
 
     # Auto-detect GitHub repo if not provided
@@ -1351,122 +1467,51 @@ def generate_html(json_path, output_dir, github_repo=None):
     if current_conv:
         conversations.append(current_conv)
 
-    total_convs = len(conversations)
-    total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
+    # Render all messages into a single page
+    messages_html = []
+    for conv in conversations:
+        is_first = True
+        for log_type, message_json, timestamp in conv["messages"]:
+            msg_html = render_message(log_type, message_json, timestamp)
+            if msg_html:
+                # Wrap continuation summaries in collapsed details
+                if is_first and conv.get("is_continuation"):
+                    msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
+                messages_html.append(msg_html)
+            is_first = False
 
-    for page_num in range(1, total_pages + 1):
-        start_idx = (page_num - 1) * PROMPTS_PER_PAGE
-        end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
-        page_convs = conversations[start_idx:end_idx]
-        messages_html = []
-        for conv in page_convs:
-            is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
-                if msg_html:
-                    # Wrap continuation summaries in collapsed details
-                    if is_first and conv.get("is_continuation"):
-                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
-                    messages_html.append(msg_html)
-                is_first = False
-        pagination_html = generate_pagination_html(page_num, total_pages)
-        page_template = get_template("page.html")
-        page_content = page_template.render(
-            css=CSS,
-            js=JS,
-            page_num=page_num,
-            total_pages=total_pages,
-            pagination_html=pagination_html,
-            messages_html="".join(messages_html),
-        )
-        (output_dir / f"page-{page_num:03d}.html").write_text(
-            page_content, encoding="utf-8"
-        )
-        print(f"Generated page-{page_num:03d}.html")
-
-    # Calculate overall stats and collect all commits for timeline
+    # Calculate overall stats
     total_tool_counts = {}
     total_messages = 0
-    all_commits = []  # (timestamp, hash, message, page_num, conv_index)
-    for i, conv in enumerate(conversations):
+    total_commits = 0
+    prompt_count = 0
+    for conv in conversations:
         total_messages += len(conv["messages"])
         stats = analyze_conversation(conv["messages"])
         for tool, count in stats["tool_counts"].items():
             total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        for commit_hash, commit_msg, commit_ts in stats["commits"]:
-            all_commits.append((commit_ts, commit_hash, commit_msg, page_num, i))
+        total_commits += len(stats["commits"])
+        if not conv.get("is_continuation") and not conv["user_text"].startswith(
+            "Stop hook feedback:"
+        ):
+            prompt_count += 1
     total_tool_calls = sum(total_tool_counts.values())
-    total_commits = len(all_commits)
 
-    # Build timeline items: prompts and commits merged by timestamp
-    timeline_items = []
-
-    # Add prompts
-    prompt_num = 0
-    for i, conv in enumerate(conversations):
-        if conv.get("is_continuation"):
-            continue
-        if conv["user_text"].startswith("Stop hook feedback:"):
-            continue
-        prompt_num += 1
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        msg_id = make_msg_id(conv["timestamp"])
-        link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
-
-        # Collect all messages including from subsequent continuation conversations
-        # This ensures long_texts from continuations appear with the original prompt
-        all_messages = list(conv["messages"])
-        for j in range(i + 1, len(conversations)):
-            if not conversations[j].get("is_continuation"):
-                break
-            all_messages.extend(conversations[j]["messages"])
-
-        # Analyze conversation for stats (excluding commits from inline display now)
-        stats = analyze_conversation(all_messages)
-        tool_stats_str = format_tool_stats(stats["tool_counts"])
-
-        long_texts_html = ""
-        for lt in stats["long_texts"]:
-            rendered_lt = render_markdown_text(lt)
-            long_texts_html += _macros.index_long_text(rendered_lt)
-
-        stats_html = _macros.index_stats(tool_stats_str, long_texts_html)
-
-        item_html = _macros.index_item(
-            prompt_num, link, conv["timestamp"], rendered_content, stats_html
-        )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
-
-    # Add commits as separate timeline items
-    for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
-        item_html = _macros.index_commit(
-            commit_hash, commit_msg, commit_ts, _github_repo
-        )
-        timeline_items.append((commit_ts, "commit", item_html))
-
-    # Sort by timestamp
-    timeline_items.sort(key=lambda x: x[0])
-    index_items = [item[2] for item in timeline_items]
-
-    index_pagination = generate_index_pagination_html(total_pages)
-    index_template = get_template("index.html")
-    index_content = index_template.render(
+    single_template = get_template("single.html")
+    page_content = single_template.render(
         css=CSS,
         js=JS,
-        pagination_html=index_pagination,
-        prompt_num=prompt_num,
+        session_title=session_title,
+        prompt_count=prompt_count,
         total_messages=total_messages,
         total_tool_calls=total_tool_calls,
         total_commits=total_commits,
-        total_pages=total_pages,
-        index_items_html="".join(index_items),
+        messages_html="".join(messages_html),
     )
     index_path = output_dir / "index.html"
-    index_path.write_text(index_content, encoding="utf-8")
+    index_path.write_text(page_content, encoding="utf-8")
     print(
-        f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
+        f"Generated {index_path.resolve()} ({len(conversations)} prompts, single page)"
     )
 
 
@@ -1780,6 +1825,9 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
+    # Use session title if available (web sessions), otherwise derive from first user message
+    session_title = session_data.get("title", "")
+
     loglines = session_data.get("loglines", [])
 
     # Auto-detect GitHub repo if not provided
@@ -1825,122 +1873,63 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     if current_conv:
         conversations.append(current_conv)
 
-    total_convs = len(conversations)
-    total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
+    # Render all messages into a single page
+    messages_html = []
+    for conv in conversations:
+        is_first = True
+        for log_type, message_json, timestamp in conv["messages"]:
+            msg_html = render_message(log_type, message_json, timestamp)
+            if msg_html:
+                # Wrap continuation summaries in collapsed details
+                if is_first and conv.get("is_continuation"):
+                    msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
+                messages_html.append(msg_html)
+            is_first = False
 
-    for page_num in range(1, total_pages + 1):
-        start_idx = (page_num - 1) * PROMPTS_PER_PAGE
-        end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
-        page_convs = conversations[start_idx:end_idx]
-        messages_html = []
-        for conv in page_convs:
-            is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
-                if msg_html:
-                    # Wrap continuation summaries in collapsed details
-                    if is_first and conv.get("is_continuation"):
-                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
-                    messages_html.append(msg_html)
-                is_first = False
-        pagination_html = generate_pagination_html(page_num, total_pages)
-        page_template = get_template("page.html")
-        page_content = page_template.render(
-            css=CSS,
-            js=JS,
-            page_num=page_num,
-            total_pages=total_pages,
-            pagination_html=pagination_html,
-            messages_html="".join(messages_html),
-        )
-        (output_dir / f"page-{page_num:03d}.html").write_text(
-            page_content, encoding="utf-8"
-        )
-        click.echo(f"Generated page-{page_num:03d}.html")
-
-    # Calculate overall stats and collect all commits for timeline
+    # Calculate overall stats
     total_tool_counts = {}
     total_messages = 0
-    all_commits = []  # (timestamp, hash, message, page_num, conv_index)
-    for i, conv in enumerate(conversations):
+    total_commits = 0
+    prompt_count = 0
+    for conv in conversations:
         total_messages += len(conv["messages"])
         stats = analyze_conversation(conv["messages"])
         for tool, count in stats["tool_counts"].items():
             total_tool_counts[tool] = total_tool_counts.get(tool, 0) + count
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        for commit_hash, commit_msg, commit_ts in stats["commits"]:
-            all_commits.append((commit_ts, commit_hash, commit_msg, page_num, i))
+        total_commits += len(stats["commits"])
+        if not conv.get("is_continuation") and not conv["user_text"].startswith(
+            "Stop hook feedback:"
+        ):
+            prompt_count += 1
     total_tool_calls = sum(total_tool_counts.values())
-    total_commits = len(all_commits)
 
-    # Build timeline items: prompts and commits merged by timestamp
-    timeline_items = []
-
-    # Add prompts
-    prompt_num = 0
-    for i, conv in enumerate(conversations):
-        if conv.get("is_continuation"):
-            continue
-        if conv["user_text"].startswith("Stop hook feedback:"):
-            continue
-        prompt_num += 1
-        page_num = (i // PROMPTS_PER_PAGE) + 1
-        msg_id = make_msg_id(conv["timestamp"])
-        link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
-
-        # Collect all messages including from subsequent continuation conversations
-        # This ensures long_texts from continuations appear with the original prompt
-        all_messages = list(conv["messages"])
-        for j in range(i + 1, len(conversations)):
-            if not conversations[j].get("is_continuation"):
+    # Derive title from first user message if not set
+    if not session_title:
+        for conv in conversations:
+            if not conv.get("is_continuation"):
+                text = conv["user_text"]
+                if len(text) > 80:
+                    text = text[:77] + "..."
+                session_title = text
                 break
-            all_messages.extend(conversations[j]["messages"])
+    if not session_title:
+        session_title = "Claude Code transcript"
 
-        # Analyze conversation for stats (excluding commits from inline display now)
-        stats = analyze_conversation(all_messages)
-        tool_stats_str = format_tool_stats(stats["tool_counts"])
-
-        long_texts_html = ""
-        for lt in stats["long_texts"]:
-            rendered_lt = render_markdown_text(lt)
-            long_texts_html += _macros.index_long_text(rendered_lt)
-
-        stats_html = _macros.index_stats(tool_stats_str, long_texts_html)
-
-        item_html = _macros.index_item(
-            prompt_num, link, conv["timestamp"], rendered_content, stats_html
-        )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
-
-    # Add commits as separate timeline items
-    for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
-        item_html = _macros.index_commit(
-            commit_hash, commit_msg, commit_ts, _github_repo
-        )
-        timeline_items.append((commit_ts, "commit", item_html))
-
-    # Sort by timestamp
-    timeline_items.sort(key=lambda x: x[0])
-    index_items = [item[2] for item in timeline_items]
-
-    index_pagination = generate_index_pagination_html(total_pages)
-    index_template = get_template("index.html")
-    index_content = index_template.render(
+    single_template = get_template("single.html")
+    page_content = single_template.render(
         css=CSS,
         js=JS,
-        pagination_html=index_pagination,
-        prompt_num=prompt_num,
+        session_title=session_title,
+        prompt_count=prompt_count,
         total_messages=total_messages,
         total_tool_calls=total_tool_calls,
         total_commits=total_commits,
-        total_pages=total_pages,
-        index_items_html="".join(index_items),
+        messages_html="".join(messages_html),
     )
     index_path = output_dir / "index.html"
-    index_path.write_text(index_content, encoding="utf-8")
+    index_path.write_text(page_content, encoding="utf-8")
     click.echo(
-        f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
+        f"Generated {index_path.resolve()} ({len(conversations)} prompts, single page)"
     )
 
 

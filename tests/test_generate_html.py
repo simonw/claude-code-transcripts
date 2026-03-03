@@ -61,29 +61,32 @@ def output_dir():
 class TestGenerateHtml:
     """Tests for the main generate_html function."""
 
-    def test_generates_index_html(self, output_dir, snapshot_html):
-        """Test index.html generation."""
+    def test_generates_single_page_html(self, output_dir, snapshot_html):
+        """Test that generate_html produces a single index.html with all content."""
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert index_html == snapshot_html
 
-    def test_generates_page_001_html(self, output_dir, snapshot_html):
-        """Test page-001.html generation."""
+    def test_no_page_files_generated(self, output_dir):
+        """Test that no separate page-XXX.html files are generated."""
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
-        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
-        assert page_html == snapshot_html
+        page_files = list(output_dir.glob("page-*.html"))
+        assert page_files == [], f"Expected no page files, found: {page_files}"
 
-    def test_generates_page_002_html(self, output_dir, snapshot_html):
-        """Test page-002.html generation (continuation page)."""
+    def test_all_messages_in_single_page(self, output_dir):
+        """Test that all user messages are in the single index.html."""
         fixture_path = Path(__file__).parent / "sample_session.json"
         generate_html(fixture_path, output_dir, github_repo="example/project")
 
-        page_html = (output_dir / "page-002.html").read_text(encoding="utf-8")
-        assert page_html == snapshot_html
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        # Should contain user messages (class="message user")
+        assert 'class="message user"' in index_html
+        # Should contain assistant messages
+        assert 'class="message assistant"' in index_html
 
     def test_github_repo_autodetect(self, sample_session):
         """Test GitHub repo auto-detection from git push output."""
@@ -111,11 +114,10 @@ class TestGenerateHtml:
         generate_html(jsonl_file, output_dir)
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
-        # Should have 1 prompt, not 0
-        assert "1 prompts" in index_html or "1 prompt" in index_html
-        assert "0 prompts" not in index_html
-        # The page file should exist
-        assert (output_dir / "page-001.html").exists()
+        # Should contain the user message
+        assert "Hello from array format" in index_html
+        # Should contain the assistant response
+        assert "Hi there!" in index_html
 
 
 class TestRenderFunctions:
@@ -1561,80 +1563,106 @@ class TestOutputAutoOption:
         assert (expected_dir / "index.html").exists()
 
 
-class TestSearchFeature:
-    """Tests for the search feature on index.html pages."""
+class TestUserMessageUI:
+    """Tests for user message right-alignment, icon, and filter button."""
 
-    def test_search_box_in_index_html(self, output_dir):
-        """Test that search box is present in index.html."""
+    def test_user_messages_have_right_aligned_css(self, output_dir):
+        """User messages should be styled to appear on the right side."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # Search box should be present with id="search-box"
-        assert 'id="search-box"' in index_html
-        # Search input should be present
-        assert 'id="search-input"' in index_html
-        # Search button should be present
-        assert 'id="search-btn"' in index_html
+        # CSS should right-align user messages
+        assert "message.user" in html
+        assert "margin-left" in html
 
-    def test_search_modal_in_index_html(self, output_dir):
-        """Test that search modal dialog is present in index.html."""
+    def test_user_messages_have_icon_css(self, output_dir):
+        """User messages should have a user icon via CSS."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # Search modal should be present
-        assert 'id="search-modal"' in index_html
-        # Results container should be present
-        assert 'id="search-results"' in index_html
+        # CSS should add a user icon
+        assert "user-icon" in html
 
-    def test_search_javascript_present(self, output_dir):
-        """Test that search JavaScript functionality is present."""
+    def test_floating_filter_button_css(self, output_dir):
+        """A floating button should be styled for filtering user-only messages."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # JavaScript should handle DOMParser for parsing fetched pages
-        assert "DOMParser" in index_html
-        # JavaScript should handle fetch for getting pages
-        assert "fetch(" in index_html
-        # JavaScript should handle #search= URL fragment
-        assert "#search=" in index_html or "search=" in index_html
+        # CSS should style the floating filter button
+        assert "filter-fab" in html
 
-    def test_search_css_present(self, output_dir):
-        """Test that search CSS styles are present."""
+    def test_floating_filter_button_js(self, output_dir):
+        """JS should create and handle the floating filter button."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # CSS should style the search box
-        assert "#search-box" in index_html or ".search-box" in index_html
-        # CSS should style the search modal
-        assert "#search-modal" in index_html or ".search-modal" in index_html
+        # JS should create the filter button
+        assert "filter-fab" in html
+        # JS should toggle user-only mode
+        assert "user-only" in html
 
-    def test_search_box_hidden_by_default_in_css(self, output_dir):
-        """Test that search box is hidden by default (for progressive enhancement)."""
+    def test_user_only_mode_hides_non_user_messages(self, output_dir):
+        """When user-only mode is active, non-user messages should be hidden."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # Search box should be hidden by default in CSS
-        # JavaScript will show it when loaded
-        assert "search-box" in index_html
-        # The JS should show the search box
-        assert "style.display" in index_html or "classList" in index_html
+        # CSS should hide non-user messages when body has user-only class
+        assert "user-only" in html
+        assert "display: none" in html or "display:none" in html
 
-    def test_search_total_pages_available(self, output_dir):
-        """Test that total_pages is available to JavaScript for fetching."""
+    def test_user_only_keeps_continuation_wrappers_visible(self, output_dir):
+        """Continuation wrappers must stay visible in user-only mode.
+
+        The sidebar is built from all .message.user elements, including those
+        inside <details class="continuation">. Hiding the entire wrapper breaks
+        sidebar navigation. Instead, only the summary should be hidden and the
+        wrapper forced open so user messages inside remain scrollable.
+        """
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html(fixture_path, output_dir)
 
-        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
 
-        # Total pages should be embedded for JS to know how many pages to fetch
-        assert "totalPages" in index_html or "total_pages" in index_html
+        # The CSS must NOT hide the entire details.continuation in user-only mode
+        assert "body.user-only details.continuation { display: none; }" not in html
+
+        # Instead, just the summary inside should be hidden
+        assert "body.user-only details.continuation > summary" in html
+
+        # JS should force continuation details open when entering user-only mode
+        assert "details.continuation" in html
+        assert "d.open = true" in html or ".open = true" in html
+
+    def test_truncatable_defaults_to_expanded(self, output_dir):
+        """Truncatable content should be expanded by default, not collapsed."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir)
+
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # JS should initially add 'expanded' class for tall content (not 'truncated')
+        # The truncatable init code should set expanded as the default state
+        assert (
+            "if (content.scrollHeight > 250) {\n        wrapper.classList.add('expanded')"
+            in html
+        )
+
+    def test_fab_no_message_guard(self, output_dir):
+        """FAB should be created on all pages, not just pages with .message elements."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir)
+
+        html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # JS should NOT have a guard that skips FAB creation when no .message elements
+        assert "if (!document.querySelector('.message')) return;" not in html

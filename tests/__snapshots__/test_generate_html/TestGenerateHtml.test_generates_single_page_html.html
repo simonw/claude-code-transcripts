@@ -3,19 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Code transcript - page 1</title>
+    <title>Create a simple Python function to add two numbers</title>
     <style>
 :root { --bg-color: #f5f5f5; --card-bg: #ffffff; --user-bg: #e3f2fd; --user-border: #1976d2; --assistant-bg: #f5f5f5; --assistant-border: #9e9e9e; --thinking-bg: #fff8e1; --thinking-border: #ffc107; --thinking-text: #666; --tool-bg: #f3e5f5; --tool-border: #9c27b0; --tool-result-bg: #e8f5e9; --tool-error-bg: #ffebee; --text-color: #212121; --text-muted: #757575; --code-bg: #263238; --code-text: #aed581; }
 * { box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 16px; line-height: 1.6; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 16px; padding-right: 230px; line-height: 1.6; }
 .container { max-width: 800px; margin: 0 auto; }
-h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom: 2px solid var(--user-border); }
+h1 { font-size: 1.5rem; margin-bottom: 8px; }
+.session-stats { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0; }
+.stat-badge { display: inline-flex; align-items: center; gap: 4px; padding: 4px 12px; background: var(--card-bg); border: 1px solid #e0e0e0; border-radius: 20px; font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+.stat-badge strong { color: var(--text-color); font-weight: 600; }
 .header-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 2px solid var(--user-border); padding-bottom: 8px; margin-bottom: 24px; }
 .header-row h1 { border-bottom: none; padding-bottom: 0; margin-bottom: 0; flex: 1; min-width: 200px; }
-.message { margin-bottom: 16px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-.message.user { background: var(--user-bg); border-left: 4px solid var(--user-border); }
-.message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); }
-.message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; }
+.message { margin-bottom: 20px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.08); transition: box-shadow 0.15s, transform 0.15s; }
+.message:hover { box-shadow: 0 3px 12px rgba(0,0,0,0.12); transform: translateY(-1px); }
+.message.user { background: var(--user-bg); border-left: none; border-right: 4px solid var(--user-border); margin-left: 15%; position: relative; }
+.message.user .message-header { flex-direction: row-reverse; }
+.user-icon { width: 28px; height: 28px; border-radius: 50%; background: var(--user-border); color: white; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.user-icon svg { width: 16px; height: 16px; fill: white; }
+.message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); margin-right: 15%; }
+.message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; margin-right: 15%; }
 .tool-reply .role-label { color: #e65100; }
 .tool-reply .tool-result { background: transparent; padding: 0; margin: 0; }
 .tool-reply .tool-result .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, #fff8e1); }
@@ -140,24 +147,41 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 .search-result-page { padding: 6px 12px; background: rgba(0,0,0,0.03); font-size: 0.8rem; color: var(--text-muted); border-bottom: 1px solid rgba(0,0,0,0.06); }
 .search-result-content { padding: 12px; }
 .search-result mark { background: #fff59d; padding: 1px 2px; border-radius: 2px; }
-@media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } }
+.filter-fab { position: fixed; bottom: 80px; right: 24px; width: 48px; height: 48px; border-radius: 50%; background: var(--user-bg); color: var(--user-border); border: 2px solid var(--user-border); box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; z-index: 1000; transition: all 0.2s; }
+.filter-fab svg { fill: var(--user-border); transition: fill 0.2s; }
+.filter-fab:hover { background: rgba(25,118,210,0.08); }
+.filter-fab.active { background: #0d47a1; border-color: #0d47a1; box-shadow: 0 2px 12px rgba(13,71,161,0.5); }
+.filter-fab.active svg { fill: white; }
+body.user-only .message:not(.user) { display: none; }
+body.user-only details.continuation > summary { display: none; }
+.message.user .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, var(--user-bg)); }
+.sidebar-nav { position: fixed; right: 16px; top: 45%; transform: translateY(-50%); z-index: 999; max-height: 70vh; overflow-y: auto; overflow-x: hidden; width: 200px; scrollbar-width: thin; scrollbar-color: #ccc transparent; }
+.sidebar-nav::-webkit-scrollbar { width: 3px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+.sidebar-list { list-style: none; margin: 0; padding: 0; position: relative; }
+.sidebar-item { position: relative; padding: 6px 0 6px 16px; border-left: 2px solid #e0e0e0; cursor: pointer; transition: all 0.15s; }
+.sidebar-item:hover { border-left-color: #90caf9; }
+.sidebar-item.passed { border-left-color: var(--user-border); }
+.sidebar-item.active { border-left-color: var(--user-border); border-left-width: 3px; padding-left: 15px; }
+.sidebar-label { font-size: 0.72rem; line-height: 1.35; color: var(--text-muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; transition: color 0.15s; }
+.sidebar-item:hover .sidebar-label { color: var(--text-color); }
+.sidebar-item.active .sidebar-label { color: var(--user-border); font-weight: 600; }
+.sidebar-item.passed .sidebar-label { color: #546e7a; }
+@media (max-width: 1100px) { .sidebar-nav { display: none; } body { padding-right: 16px; } }
+@media (max-width: 600px) { body { padding: 8px; } .message, .index-item { border-radius: 8px; } .message-content, .index-item-content { padding: 12px; } pre { font-size: 0.8rem; padding: 8px; } #search-box input { width: 120px; } #search-modal[open] { width: 95vw; height: 90vh; } .message.user { margin-left: 5%; } .message.assistant { margin-right: 5%; } .message.tool-reply { margin-right: 5%; } }
 </style>
 </head>
 <body>
     <div class="container">
-        <h1><a href="index.html" style="color: inherit; text-decoration: none;">Claude Code transcript</a> - page 1/2</h1>
+        <h1>Create a simple Python function to add two numbers</h1>
+        <div class="session-stats">
+            <span class="stat-badge"><strong>5</strong> prompts</span>
+            <span class="stat-badge"><strong>33</strong> messages</span>
+            <span class="stat-badge"><strong>12</strong> tool calls</span>
+            <span class="stat-badge"><strong>2</strong> commits</span>
+        </div>
         
-
-<div class="pagination">
-<a href="index.html" class="index-link">Index</a>
-<span class="disabled">&larr; Prev</span>
-<span class="current">1</span>
-<a href="page-002.html">2</a>
-<a href="page-002.html">Next &rarr;</a>
-</div>
-
-        
-<div class="message user" id="msg-2025-12-24T10-00-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-00-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:00.000Z" data-timestamp="2025-12-24T10:00:00.000Z">2025-12-24T10:00:00.000Z</time></a></div><div class="message-content">
+<div class="message user" id="msg-2025-12-24T10-00-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-00-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:00.000Z" data-timestamp="2025-12-24T10:00:00.000Z">2025-12-24T10:00:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>Create a simple Python function to add two numbers</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-00-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-00-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:05.000Z" data-timestamp="2025-12-24T10:00:05.000Z">2025-12-24T10:00:05.000Z</time></a></div><div class="message-content">
 <div class="thinking"><div class="thinking-label">Thinking</div><p>The user wants a simple addition function. I should:
@@ -207,7 +231,7 @@ remote:      https://github.com/example/project/pull/new/main
 remote: 
 To github.com:example/project.git
    def5678..abc1234  main -&gt; main</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
-<div class="message user" id="msg-2025-12-24T10-01-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-01-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:00.000Z" data-timestamp="2025-12-24T10:01:00.000Z">2025-12-24T10:01:00.000Z</time></a></div><div class="message-content">
+<div class="message user" id="msg-2025-12-24T10-01-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-01-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:00.000Z" data-timestamp="2025-12-24T10:01:00.000Z">2025-12-24T10:01:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>Now edit the file to add a subtract function</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-01-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-01-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:05.000Z" data-timestamp="2025-12-24T10:01:05.000Z">2025-12-24T10:01:05.000Z</time></a></div><div class="message-content">
 <div class="tool-use" data-tool-id="toolu_glob_001"><div class="tool-header"><span class="tool-icon">⚙</span> Glob</div><div class="truncatable"><div class="truncatable-content"><pre class="json">{
@@ -240,7 +264,7 @@ def subtract(a: int, b: int) -&gt; int:
   &#34;output_mode&#34;: &#34;content&#34;
 }</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
 <div class="message tool-reply" id="msg-2025-12-24T10-01-30-000Z"><div class="message-header"><span class="role-label">Tool reply</span><a href="#msg-2025-12-24T10-01-30-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:30.000Z" data-timestamp="2025-12-24T10:01:30.000Z">2025-12-24T10:01:30.000Z</time></a></div><div class="message-content"><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>/project/math_utils.py:6:def subtract(a: int, b: int) -&gt; int:</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
-<div class="message user" id="msg-2025-12-24T10-02-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-02-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:02:00.000Z" data-timestamp="2025-12-24T10:02:00.000Z">2025-12-24T10:02:00.000Z</time></a></div><div class="message-content">
+<div class="message user" id="msg-2025-12-24T10-02-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-02-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:02:00.000Z" data-timestamp="2025-12-24T10:02:00.000Z">2025-12-24T10:02:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>Run the tests again</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-02-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-02-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:02:05.000Z" data-timestamp="2025-12-24T10:02:05.000Z">2025-12-24T10:02:05.000Z</time></a></div><div class="message-content">
 <div class="tool-use bash-tool" data-tool-id="toolu_bash_004">
@@ -259,7 +283,7 @@ test_subtract - AssertionError: expected 5 but got None</pre></div><button class
 <pre><code class="language-python">def example():
     return 42
 </code></pre></div></div></div>
-<div class="message user" id="msg-2025-12-24T10-03-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-03-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:00.000Z" data-timestamp="2025-12-24T10:03:00.000Z">2025-12-24T10:03:00.000Z</time></a></div><div class="message-content">
+<div class="message user" id="msg-2025-12-24T10-03-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-03-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:00.000Z" data-timestamp="2025-12-24T10:03:00.000Z">2025-12-24T10:03:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>Fix the issue and commit</p></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-03-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-03-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:05.000Z" data-timestamp="2025-12-24T10:03:05.000Z">2025-12-24T10:03:05.000Z</time></a></div><div class="message-content"><div class="file-tool edit-tool" data-tool-id="toolu_edit_002">
 <div class="file-tool-header edit-header"><span class="file-tool-icon">✏️</span> Edit <span class="file-tool-path">test_math.py</span> <span class="edit-replace-all">(replace all)</span></div>
@@ -278,18 +302,28 @@ test_subtract - AssertionError: expected 5 but got None</pre></div><button class
 <div class="message tool-reply" id="msg-2025-12-24T10-03-20-000Z"><div class="message-header"><span class="role-label">Tool reply</span><a href="#msg-2025-12-24T10-03-20-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:20.000Z" data-timestamp="2025-12-24T10:03:20.000Z">2025-12-24T10:03:20.000Z</time></a></div><div class="message-content"><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><div class="commit-card"><a href="https://github.com/example/project/commit/def5678"><span class="commit-card-hash">def5678</span> Add subtract function and fix tests</a></div><pre>2 files changed, 10 insertions(+), 1 deletion(-)</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
 <div class="message assistant" id="msg-2025-12-24T10-03-25-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-03-25-000Z" class="timestamp-link"><time datetime="2025-12-24T10:03:25.000Z" data-timestamp="2025-12-24T10:03:25.000Z">2025-12-24T10:03:25.000Z</time></a></div><div class="message-content">
 <div class="assistant-text"><p>Done! The subtract function is now working and committed.</p></div></div></div><details class="continuation"><summary>Session continuation summary</summary>
-<div class="message user" id="msg-2025-12-24T10-04-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-04-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:04:00.000Z" data-timestamp="2025-12-24T10:04:00.000Z">2025-12-24T10:04:00.000Z</time></a></div><div class="message-content">
+<div class="message user" id="msg-2025-12-24T10-04-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-04-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:04:00.000Z" data-timestamp="2025-12-24T10:04:00.000Z">2025-12-24T10:04:00.000Z</time></a></div><div class="message-content">
 <div class="user-content"><p>This is a session continuation summary from a previous context. The user was working on a math utilities library.</p></div></div></div></details>
-        
+<div class="message user" id="msg-2025-12-24T10-05-00-000Z"><div class="message-header"><span class="user-icon"><svg viewBox="0 0 24 24"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg></span><span class="role-label">User</span><a href="#msg-2025-12-24T10-05-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:05:00.000Z" data-timestamp="2025-12-24T10:05:00.000Z">2025-12-24T10:05:00.000Z</time></a></div><div class="message-content">
+<div class="user-content"><p>Add a multiply function too</p></div></div></div>
+<div class="message assistant" id="msg-2025-12-24T10-05-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-05-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:05:05.000Z" data-timestamp="2025-12-24T10:05:05.000Z">2025-12-24T10:05:05.000Z</time></a></div><div class="message-content"><div class="file-tool edit-tool" data-tool-id="toolu_edit_003">
+<div class="file-tool-header edit-header"><span class="file-tool-icon">✏️</span> Edit <span class="file-tool-path">math_utils.py</span></div>
+<div class="file-tool-fullpath">/project/math_utils.py</div>
+<div class="truncatable"><div class="truncatable-content">
+<div class="edit-section edit-old"><div class="edit-label">−</div><pre class="edit-content">    return a - b
+</pre></div>
+<div class="edit-section edit-new"><div class="edit-label">+</div><pre class="edit-content">    return a - b
 
-<div class="pagination">
-<a href="index.html" class="index-link">Index</a>
-<span class="disabled">&larr; Prev</span>
-<span class="current">1</span>
-<a href="page-002.html">2</a>
-<a href="page-002.html">Next &rarr;</a>
-</div>
 
+def multiply(a: int, b: int) -&gt; int:
+    &#34;&#34;&#34;Multiply two numbers.&#34;&#34;&#34;
+    return a * b
+</pre></div>
+</div><button class="expand-btn">Show more</button></div>
+</div></div></div>
+<div class="message tool-reply" id="msg-2025-12-24T10-05-10-000Z"><div class="message-header"><span class="role-label">Tool reply</span><a href="#msg-2025-12-24T10-05-10-000Z" class="timestamp-link"><time datetime="2025-12-24T10:05:10.000Z" data-timestamp="2025-12-24T10:05:10.000Z">2025-12-24T10:05:10.000Z</time></a></div><div class="message-content"><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>File edited successfully</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
+<div class="message assistant" id="msg-2025-12-24T10-05-15-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-05-15-000Z" class="timestamp-link"><time datetime="2025-12-24T10:05:15.000Z" data-timestamp="2025-12-24T10:05:15.000Z">2025-12-24T10:05:15.000Z</time></a></div><div class="message-content">
+<div class="assistant-text"><p>Added multiply function!</p></div></div></div>
     </div>
     <script>
 document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
@@ -313,13 +347,96 @@ document.querySelectorAll('.truncatable').forEach(function(wrapper) {
     const content = wrapper.querySelector('.truncatable-content');
     const btn = wrapper.querySelector('.expand-btn');
     if (content.scrollHeight > 250) {
-        wrapper.classList.add('truncated');
+        wrapper.classList.add('expanded');
+        btn.textContent = 'Show less';
         btn.addEventListener('click', function() {
-            if (wrapper.classList.contains('truncated')) { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
-            else { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
+            if (wrapper.classList.contains('expanded')) { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
+            else { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
         });
     }
 });
+(function() {
+    var userOnly = false;
+    var fab = document.createElement('button');
+    fab.className = 'filter-fab';
+    fab.title = 'Show user messages only';
+    fab.innerHTML = '<svg viewBox="0 0 24 24" width="24" height="24" fill="white"><path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z"/></svg>';
+    fab.addEventListener('click', function() {
+        userOnly = !userOnly;
+        document.body.classList.toggle('user-only', userOnly);
+        fab.classList.toggle('active', userOnly);
+        fab.title = userOnly ? 'Show all messages' : 'Show user messages only';
+        document.querySelectorAll('details.continuation').forEach(function(d) {
+            if (userOnly) { d.dataset.wasOpen = d.open; d.open = true; }
+            else { d.open = d.dataset.wasOpen === 'true'; delete d.dataset.wasOpen; }
+        });
+        if (!userOnly) {
+            var hash = window.location.hash;
+            if (hash) {
+                var target = document.querySelector(hash);
+                if (target) {
+                    var details = target.closest('details');
+                    if (details && !details.open) { details.open = true; }
+                    setTimeout(function() { target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 100);
+                }
+            }
+        }
+    });
+    document.body.appendChild(fab);
+    var userMsgs = document.querySelectorAll('.message.user');
+    if (userMsgs.length < 2) return;
+    var nav = document.createElement('nav');
+    nav.className = 'sidebar-nav';
+    var list = document.createElement('ul');
+    list.className = 'sidebar-list';
+    var items = [];
+    userMsgs.forEach(function(msg, i) {
+        var li = document.createElement('li');
+        li.className = 'sidebar-item';
+        var label = document.createElement('span');
+        label.className = 'sidebar-label';
+        var content = msg.querySelector('.message-content');
+        var preview = content ? content.textContent.trim().substring(0, 45) : 'Message ' + (i + 1);
+        if (preview.length >= 45) preview = preview.substring(0, 42) + '...';
+        label.textContent = preview;
+        li.title = content ? content.textContent.trim().substring(0, 120) : '';
+        li.appendChild(label);
+        li.addEventListener('click', function() {
+            var details = msg.closest('details');
+            if (details && !details.open) { details.open = true; }
+            if (msg.id) { history.replaceState(null, '', '#' + msg.id); }
+            setTimeout(function() { msg.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50);
+            if (userOnly) { setActive(i); }
+        });
+        list.appendChild(li);
+        items.push({ el: li, msg: msg });
+    });
+    nav.appendChild(list);
+    document.body.appendChild(nav);
+    function setActive(idx) {
+        items.forEach(function(item, i) {
+            item.el.classList.toggle('passed', i < idx);
+            item.el.classList.toggle('active', i === idx);
+        });
+        var activeEl = nav.querySelector('.sidebar-item.active');
+        if (activeEl) { activeEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    }
+    function updateSidebar() {
+        if (userOnly) return;
+        var winH = window.innerHeight;
+        var activeIdx = -1;
+        for (var i = items.length - 1; i >= 0; i--) {
+            var rect = items[i].msg.getBoundingClientRect();
+            if (rect.top <= winH * 0.4) { activeIdx = i; break; }
+        }
+        setActive(activeIdx);
+    }
+    var ticking = false;
+    window.addEventListener('scroll', function() {
+        if (!ticking) { requestAnimationFrame(function() { updateSidebar(); ticking = false; }); ticking = true; }
+    });
+    updateSidebar();
+})();
 </script>
 </body>
 </html>

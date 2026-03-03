@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}{{ session_title }}{% endblock %}
+
+{% block content %}
+        <h1>{{ session_title }}</h1>
+        <div class="session-stats">
+            <span class="stat-badge"><strong>{{ prompt_count }}</strong> prompts</span>
+            <span class="stat-badge"><strong>{{ total_messages }}</strong> messages</span>
+            <span class="stat-badge"><strong>{{ total_tool_calls }}</strong> tool calls</span>
+            <span class="stat-badge"><strong>{{ total_commits }}</strong> commits</span>
+        </div>
+        {{ messages_html|safe }}
+{%- endblock %}
