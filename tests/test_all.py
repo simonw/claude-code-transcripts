@@ -698,3 +698,194 @@ class TestWebCommandRepoFiltering:
         # Should show (no repo) placeholder
         assert "(no repo)" in display
         assert "Fix the bug" in display
+
+
+class TestMarkdownFlag:
+    """Tests for --markdown flag on CLI commands."""
+
+    def test_json_command_markdown_flag(self, output_dir):
+        """Test that json command with --markdown produces a .md file."""
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+            '{"type": "assistant", "timestamp": "2025-01-01T10:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi there!"}]}}\n'
+        )
+        md_output = output_dir / "md_output"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown"],
+        )
+        assert result.exit_code == 0
+        assert (md_output / "transcript.md").exists()
+        content = (md_output / "transcript.md").read_text()
+        assert "Hello" in content
+        assert "Hi there!" in content
+
+    def test_json_command_markdown_no_html(self, output_dir):
+        """Test that --markdown does not produce HTML files."""
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+        )
+        md_output = output_dir / "md_output"
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown"],
+        )
+        assert result.exit_code == 0
+        assert not (md_output / "index.html").exists()
+
+    def test_json_markdown_open_uses_editor(self, output_dir, monkeypatch):
+        """Test that --markdown --open opens the markdown file with $EDITOR."""
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+        )
+        md_output = output_dir / "md_output"
+
+        launched = []
+        monkeypatch.setenv("EDITOR", "vim")
+        monkeypatch.setattr(
+            "claude_code_transcripts.subprocess.run",
+            lambda args, **kw: launched.append(args),
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown", "--open"],
+        )
+        assert result.exit_code == 0
+        assert len(launched) == 1
+        assert launched[0][0] == "vim"
+        assert launched[0][1].endswith(".md")
+
+    def test_json_markdown_open_falls_back_to_click_launch(
+        self, output_dir, monkeypatch
+    ):
+        """Test that --markdown --open falls back to click.launch when no $EDITOR."""
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+        )
+        md_output = output_dir / "md_output"
+
+        launched = []
+        monkeypatch.delenv("EDITOR", raising=False)
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.setattr(
+            "claude_code_transcripts.click.launch", lambda path: launched.append(path)
+        )
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown", "--open"],
+        )
+        assert result.exit_code == 0
+        assert len(launched) == 1
+        assert launched[0].endswith(".md")
+
+    def test_json_markdown_gist_creates_gist(self, output_dir, monkeypatch):
+        """Test that --markdown --gist generates markdown and uploads as gist."""
+        import subprocess
+
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+            '{"type": "assistant", "timestamp": "2025-01-01T10:00:05.000Z", "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi there!"}]}}\n'
+        )
+        md_output = output_dir / "md_output"
+
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/md789\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown", "--gist"],
+        )
+        assert result.exit_code == 0
+        assert (md_output / "transcript.md").exists()
+        assert "Creating GitHub gist" in result.output
+        assert "gist.github.com" in result.output
+        assert "gisthost.github.io" not in result.output
+
+    def test_json_markdown_gist_does_not_open_editor(self, output_dir, monkeypatch):
+        """Test that --markdown --gist does not open editor."""
+        import subprocess
+
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+        )
+        md_output = output_dir / "md_output"
+
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/md789\n",
+            stderr="",
+        )
+
+        launched = []
+
+        def mock_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if cmd and cmd[0] == "gh":
+                return mock_result
+            launched.append(cmd)
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        monkeypatch.setenv("EDITOR", "vim")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "-o", str(md_output), "--markdown", "--gist"],
+        )
+        assert result.exit_code == 0
+        assert not any("vim" in str(c) for c in launched)
+
+    def test_json_markdown_without_open_does_not_open_editor(
+        self, output_dir, monkeypatch
+    ):
+        """Test that --markdown without --open does not open the editor."""
+        jsonl_file = output_dir / "test.jsonl"
+        jsonl_file.write_text(
+            '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello"}}\n'
+        )
+
+        launched = []
+
+        def mock_run(*args, **kwargs):
+            import subprocess
+
+            cmd = args[0] if args else kwargs.get("args", [])
+            launched.append(cmd)
+            return subprocess.CompletedProcess(args=cmd, returncode=0)
+
+        import subprocess
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        monkeypatch.setenv("EDITOR", "vim")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["json", str(jsonl_file), "--markdown"],
+        )
+        assert result.exit_code == 0
+        assert not any("vim" in str(c) for c in launched)

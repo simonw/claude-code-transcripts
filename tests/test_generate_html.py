@@ -27,6 +27,8 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    render_content_block_markdown,
+    generate_markdown,
 )
 
 
@@ -568,6 +570,47 @@ class TestInjectGistPreviewJs:
         assert "DOMContentLoaded" in GIST_PREVIEW_JS
 
 
+class TestCreateGistMarkdown:
+    """Tests for create_gist with file_glob parameter for markdown files."""
+
+    def test_creates_gist_with_markdown_files(self, output_dir, monkeypatch):
+        """Test that create_gist uploads .md files when file_glob='*.md'."""
+        import subprocess
+
+        (output_dir / "transcript.md").write_text(
+            "# Transcript\n\nHello world", encoding="utf-8"
+        )
+
+        captured_cmd = []
+        mock_result = subprocess.CompletedProcess(
+            args=["gh", "gist", "create"],
+            returncode=0,
+            stdout="https://gist.github.com/testuser/md123\n",
+            stderr="",
+        )
+
+        def mock_run(*args, **kwargs):
+            captured_cmd.extend(args[0] if args else kwargs.get("args", []))
+            return mock_result
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+
+        gist_id, gist_url = create_gist(output_dir, file_glob="*.md")
+
+        assert gist_id == "md123"
+        assert gist_url == "https://gist.github.com/testuser/md123"
+        assert any("transcript.md" in str(c) for c in captured_cmd)
+
+    def test_raises_on_no_markdown_files(self, output_dir):
+        """Test that error is raised when no .md files exist."""
+        import click
+
+        with pytest.raises(click.ClickException) as exc_info:
+            create_gist(output_dir, file_glob="*.md")
+
+        assert "No files matching" in str(exc_info.value)
+
+
 class TestCreateGist:
     """Tests for the create_gist function."""
 
@@ -609,7 +652,7 @@ class TestCreateGist:
         with pytest.raises(click.ClickException) as exc_info:
             create_gist(output_dir)
 
-        assert "No HTML files found" in str(exc_info.value)
+        assert "No files matching *.html" in str(exc_info.value)
 
     def test_raises_on_gh_cli_error(self, output_dir, monkeypatch):
         """Test that error is raised when gh CLI fails."""
@@ -1638,3 +1681,241 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestMarkdownRendering:
+    """Tests for Markdown rendering of content blocks."""
+
+    def test_text_block(self):
+        block = {"type": "text", "text": "Hello **world**"}
+        result = render_content_block_markdown(block)
+        assert result == "Hello **world**"
+
+    def test_thinking_block(self):
+        block = {"type": "thinking", "thinking": "Let me think about this"}
+        result = render_content_block_markdown(block)
+        assert "<details>" in result
+        assert "Thinking" in result
+        assert "Let me think about this" in result
+
+    def test_tool_use_write(self):
+        block = {
+            "type": "tool_use",
+            "id": "toolu_001",
+            "name": "Write",
+            "input": {"file_path": "/tmp/hello.py", "content": "print('hi')"},
+        }
+        result = render_content_block_markdown(block)
+        assert "Write" in result
+        assert "/tmp/hello.py" in result
+        assert "print('hi')" in result
+
+    def test_tool_use_edit(self):
+        block = {
+            "type": "tool_use",
+            "id": "toolu_002",
+            "name": "Edit",
+            "input": {
+                "file_path": "/tmp/hello.py",
+                "old_string": "print('hi')",
+                "new_string": "print('hello')",
+            },
+        }
+        result = render_content_block_markdown(block)
+        assert "Edit" in result
+        assert "/tmp/hello.py" in result
+        assert "print('hi')" in result
+        assert "print('hello')" in result
+
+    def test_tool_use_bash(self):
+        block = {
+            "type": "tool_use",
+            "id": "toolu_003",
+            "name": "Bash",
+            "input": {"command": "ls -la", "description": "List files"},
+        }
+        result = render_content_block_markdown(block)
+        assert "Bash" in result
+        assert "ls -la" in result
+
+    def test_tool_use_generic(self):
+        block = {
+            "type": "tool_use",
+            "id": "toolu_004",
+            "name": "Glob",
+            "input": {"pattern": "**/*.py"},
+        }
+        result = render_content_block_markdown(block)
+        assert "Glob" in result
+        assert "**/*.py" in result
+
+    def test_tool_result_string(self):
+        block = {
+            "type": "tool_result",
+            "tool_use_id": "toolu_001",
+            "content": "File written successfully",
+        }
+        result = render_content_block_markdown(block)
+        assert "File written successfully" in result
+
+    def test_tool_result_error(self):
+        block = {
+            "type": "tool_result",
+            "tool_use_id": "toolu_001",
+            "content": "Error: file not found",
+            "is_error": True,
+        }
+        result = render_content_block_markdown(block)
+        assert "Error" in result
+
+    def test_tool_result_with_list_content(self):
+        block = {
+            "type": "tool_result",
+            "tool_use_id": "toolu_001",
+            "content": [{"type": "text", "text": "some output"}],
+        }
+        result = render_content_block_markdown(block)
+        assert "some output" in result
+
+    def test_image_block(self):
+        block = {
+            "type": "image",
+            "source": {"media_type": "image/png", "data": "abc123base64"},
+        }
+        result = render_content_block_markdown(block)
+        assert "[Image" in result
+
+    def test_todo_write(self):
+        block = {
+            "type": "tool_use",
+            "id": "toolu_005",
+            "name": "TodoWrite",
+            "input": {
+                "todos": [
+                    {"content": "First task", "status": "completed"},
+                    {"content": "Second task", "status": "pending"},
+                ]
+            },
+        }
+        result = render_content_block_markdown(block)
+        assert "First task" in result
+        assert "Second task" in result
+
+    def test_tool_result_containing_code_block(self):
+        """Tool result with triple backticks must not break the markdown fence."""
+        block = {
+            "type": "tool_result",
+            "tool_use_id": "toolu_001",
+            "content": "Here is code:\n```python\nprint('hello')\n```\nDone.",
+        }
+        result = render_content_block_markdown(block)
+        assert "print('hello')" in result
+        # The outer fence must use more backticks than the inner fence
+        lines = result.split("\n")
+        fence_lines = [
+            l
+            for l in lines
+            if l.strip().startswith("`")
+            and l.strip().rstrip("`") == l.strip().rstrip("`").rstrip()
+        ]
+        # Simpler check: the result should start with >3 backticks if content has ```
+        first_line = lines[0].strip()
+        assert first_line.startswith(
+            "````"
+        ), f"Outer fence should use >=4 backticks, got: {first_line}"
+
+    def test_tool_result_list_containing_code_block(self):
+        """Tool result (list form) with triple backticks must not break the fence."""
+        block = {
+            "type": "tool_result",
+            "tool_use_id": "toolu_001",
+            "content": [{"type": "text", "text": "```\nsome code\n```"}],
+        }
+        result = render_content_block_markdown(block)
+        assert "some code" in result
+        first_line = result.split("\n")[0].strip()
+        assert first_line.startswith(
+            "````"
+        ), f"Outer fence should use >=4 backticks, got: {first_line}"
+
+    def test_tool_use_write_containing_code_block(self):
+        """Write tool with file content containing backticks must not break the fence."""
+        block = {
+            "type": "tool_use",
+            "id": "toolu_001",
+            "name": "Write",
+            "input": {
+                "file_path": "/tmp/readme.md",
+                "content": "# Hello\n\n```python\nprint('hi')\n```\n",
+            },
+        }
+        result = render_content_block_markdown(block)
+        assert "print('hi')" in result
+        # Find the opening fence line (after the **Write** header)
+        lines = result.split("\n")
+        fence_lines = [
+            l for l in lines if l.strip().startswith("`") and len(l.strip()) > 0
+        ]
+        outer_fence = fence_lines[0].strip()
+        assert (
+            len(outer_fence.rstrip()) >= 4
+        ), f"Outer fence should use >=4 backticks, got: {outer_fence}"
+
+    def test_tool_use_bash_containing_code_block(self):
+        """Bash tool with command containing backticks must not break the fence."""
+        block = {
+            "type": "tool_use",
+            "id": "toolu_001",
+            "name": "Bash",
+            "input": {"command": "echo '```hello```'"},
+        }
+        result = render_content_block_markdown(block)
+        assert "echo" in result
+
+
+class TestGenerateMarkdown:
+    """Tests for generate_markdown function."""
+
+    def test_generates_markdown_file(self, output_dir):
+        """Test that generate_markdown creates a .md file."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        assert result_path.exists()
+        assert result_path.suffix == ".md"
+
+    def test_markdown_contains_user_messages(self, output_dir):
+        """Test that user messages appear in the Markdown output."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        content = result_path.read_text()
+        assert "Create a hello world function" in content
+
+    def test_markdown_contains_assistant_messages(self, output_dir):
+        """Test that assistant messages appear in the Markdown output."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        content = result_path.read_text()
+        assert "I'll create that function for you" in content
+
+    def test_markdown_contains_tool_calls(self, output_dir):
+        """Test that tool calls appear in the Markdown output."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        content = result_path.read_text()
+        assert "Write" in content
+        assert "hello.py" in content
+
+    def test_markdown_has_role_headers(self, output_dir):
+        """Test that messages have User/Assistant headers."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        content = result_path.read_text()
+        assert "### User" in content
+        assert "### Assistant" in content
+
+    def test_markdown_has_timestamps(self, output_dir):
+        """Test that timestamps appear in the output."""
+        fixture_path = Path(__file__).parent / "sample_session.jsonl"
+        result_path = generate_markdown(fixture_path, output_dir)
+        content = result_path.read_text()
+        assert "2025-12-24" in content

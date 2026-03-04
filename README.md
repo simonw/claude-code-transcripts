@@ -52,6 +52,7 @@ All commands support these options:
 - `-o, --output DIRECTORY` - output directory (default: writes to temp dir and opens browser)
 - `-a, --output-auto` - auto-name output subdirectory based on session ID or filename
 - `--repo OWNER/NAME` - GitHub repo for commit links (auto-detected if not specified). For `web` command, also filters the session list.
+- `--markdown` - output as a single Markdown file instead of HTML
 - `--open` - open the generated `index.html` in your default browser (default if no `-o` specified)
 - `--gist` - upload the generated HTML files to a GitHub Gist and output a preview URL
 - `--json` - include the original session file in the output directory
@@ -133,6 +134,24 @@ claude-code-transcripts json session.json -o ./my-transcript --gist
 ```
 
 **Requirements:** The `--gist` option requires the [GitHub CLI](https://cli.github.com/) (`gh`) to be installed and authenticated (`gh auth login`).
+
+### Markdown output
+
+Use the `--markdown` flag to generate a single Markdown file instead of multi-page HTML:
+
+```bash
+claude-code-transcripts --markdown
+claude-code-transcripts json session.json --markdown -o ./output
+claude-code-transcripts web SESSION_ID --markdown
+```
+
+When `--open` is used with `--markdown`, the file opens in your `$VISUAL` or `$EDITOR` instead of a browser. If neither is set, it falls back to the system default application.
+
+The `--gist` flag works with `--markdown` too — since GitHub renders Markdown natively, no preview URL is needed:
+
+```bash
+claude-code-transcripts json session.json --markdown --gist
+```
 
 ### Auto-naming output directories
 

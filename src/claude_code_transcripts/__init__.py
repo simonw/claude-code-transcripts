@@ -840,6 +840,109 @@ def render_content_block(block):
         return format_json(block)
 
 
+def _md_fence(content, lang=""):
+    """Return a fenced code block, using enough backticks to avoid breaking on inner fences."""
+    runs = re.findall(r"`{3,}", content)
+    max_run = max((len(r) for r in runs), default=0)
+    ticks = "`" * max(3, max_run + 1)
+    return f"{ticks}{lang}\n{content}\n{ticks}"
+
+
+def render_content_block_markdown(block):
+    """Render a single content block as Markdown text."""
+    if not isinstance(block, dict):
+        return str(block)
+
+    block_type = block.get("type", "")
+
+    if block_type == "text":
+        return block.get("text", "")
+
+    elif block_type == "thinking":
+        thinking = block.get("thinking", "")
+        return f"<details>\n<summary>Thinking</summary>\n\n{thinking}\n\n</details>"
+
+    elif block_type == "image":
+        return "[Image embedded in original transcript]"
+
+    elif block_type == "tool_use":
+        tool_name = block.get("name", "Unknown tool")
+        tool_input = block.get("input", {})
+
+        if tool_name == "TodoWrite":
+            todos = tool_input.get("todos", [])
+            lines = [f"**TodoWrite**\n"]
+            for todo in todos:
+                status = todo.get("status", "pending")
+                content = todo.get("content", "")
+                if status == "completed":
+                    lines.append(f"- [x] {content}")
+                elif status == "in_progress":
+                    lines.append(f"- [ ] {content} *(in progress)*")
+                else:
+                    lines.append(f"- [ ] {content}")
+            return "\n".join(lines)
+
+        if tool_name == "Write":
+            file_path = tool_input.get("file_path", "Unknown file")
+            content = tool_input.get("content", "")
+            return f"**Write** `{file_path}`\n\n{_md_fence(content)}"
+
+        if tool_name == "Edit":
+            file_path = tool_input.get("file_path", "Unknown file")
+            old_string = tool_input.get("old_string", "")
+            new_string = tool_input.get("new_string", "")
+            replace_all = tool_input.get("replace_all", False)
+            header = f"**Edit** `{file_path}`"
+            if replace_all:
+                header += " *(replace all)*"
+            diff_body = f"- {old_string}\n+ {new_string}"
+            return f"{header}\n\n{_md_fence(diff_body, 'diff')}"
+
+        if tool_name == "Bash":
+            command = tool_input.get("command", "")
+            description = tool_input.get("description", "")
+            header = f"**Bash**"
+            if description:
+                header += f": {description}"
+            return f"{header}\n\n{_md_fence(command, 'bash')}"
+
+        display_input = {k: v for k, v in tool_input.items() if k != "description"}
+        input_json = json.dumps(display_input, indent=2, ensure_ascii=False)
+        description = tool_input.get("description", "")
+        header = f"**{tool_name}**"
+        if description:
+            header += f": {description}"
+        return f"{header}\n\n{_md_fence(input_json, 'json')}"
+
+    elif block_type == "tool_result":
+        content = block.get("content", "")
+        is_error = block.get("is_error", False)
+        prefix = "**Error:**\n" if is_error else ""
+
+        if isinstance(content, str):
+            return f"{prefix}{_md_fence(content)}"
+        elif isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    if item.get("type") == "text":
+                        parts.append(item.get("text", ""))
+                    elif item.get("type") == "image":
+                        parts.append("[Image embedded in original transcript]")
+                    else:
+                        parts.append(json.dumps(item, indent=2, ensure_ascii=False))
+                else:
+                    parts.append(str(item))
+            result = "\n".join(parts)
+            return f"{prefix}{_md_fence(result)}"
+        else:
+            return f"{prefix}{_md_fence(json.dumps(content, indent=2, ensure_ascii=False))}"
+
+    else:
+        return _md_fence(json.dumps(block, indent=2, ensure_ascii=False), "json")
+
+
 def render_user_message_content(message_data):
     content = message_data.get("content", "")
     if isinstance(content, str):
@@ -1248,20 +1351,22 @@ def inject_gist_preview_js(output_dir):
             html_file.write_text(content, encoding="utf-8")
 
 
-def create_gist(output_dir, public=False):
-    """Create a GitHub gist from the HTML files in output_dir.
+def create_gist(output_dir, public=False, file_glob="*.html"):
+    """Create a GitHub gist from files in output_dir matching file_glob.
 
     Returns the gist ID on success, or raises click.ClickException on failure.
     """
     output_dir = Path(output_dir)
-    html_files = list(output_dir.glob("*.html"))
-    if not html_files:
-        raise click.ClickException("No HTML files found to upload to gist.")
+    files = list(output_dir.glob(file_glob))
+    if not files:
+        raise click.ClickException(
+            f"No files matching {file_glob} found to upload to gist."
+        )
 
     # Build the gh gist create command
     # gh gist create file1 file2 ... --public/--private
     cmd = ["gh", "gist", "create"]
-    cmd.extend(str(f) for f in sorted(html_files))
+    cmd.extend(str(f) for f in sorted(files))
     if public:
         cmd.append("--public")
 
@@ -1318,38 +1423,7 @@ def generate_html(json_path, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
-    conversations = []
-    current_conv = None
-    for entry in loglines:
-        log_type = entry.get("type")
-        timestamp = entry.get("timestamp", "")
-        is_compact_summary = entry.get("isCompactSummary", False)
-        message_data = entry.get("message", {})
-        if not message_data:
-            continue
-        # Convert message dict to JSON string for compatibility with existing render functions
-        message_json = json.dumps(message_data)
-        is_user_prompt = False
-        user_text = None
-        if log_type == "user":
-            content = message_data.get("content", "")
-            text = extract_text_from_content(content)
-            if text:
-                is_user_prompt = True
-                user_text = text
-        if is_user_prompt:
-            if current_conv:
-                conversations.append(current_conv)
-            current_conv = {
-                "user_text": user_text,
-                "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
-                "is_continuation": bool(is_compact_summary),
-            }
-        elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
-    if current_conv:
-        conversations.append(current_conv)
+    conversations = _group_conversations(loglines)
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
@@ -1470,6 +1544,110 @@ def generate_html(json_path, output_dir, github_repo=None):
     )
 
 
+def _group_conversations(loglines):
+    """Group loglines into conversations. Shared by HTML and Markdown generators."""
+    conversations = []
+    current_conv = None
+    for entry in loglines:
+        log_type = entry.get("type")
+        timestamp = entry.get("timestamp", "")
+        is_compact_summary = entry.get("isCompactSummary", False)
+        message_data = entry.get("message", {})
+        if not message_data:
+            continue
+        message_json = json.dumps(message_data)
+        is_user_prompt = False
+        user_text = None
+        if log_type == "user":
+            content = message_data.get("content", "")
+            text = extract_text_from_content(content)
+            if text:
+                is_user_prompt = True
+                user_text = text
+        if is_user_prompt:
+            if current_conv:
+                conversations.append(current_conv)
+            current_conv = {
+                "user_text": user_text,
+                "timestamp": timestamp,
+                "messages": [(log_type, message_json, timestamp)],
+                "is_continuation": bool(is_compact_summary),
+            }
+        elif current_conv:
+            current_conv["messages"].append((log_type, message_json, timestamp))
+    if current_conv:
+        conversations.append(current_conv)
+    return conversations
+
+
+def _render_message_content_markdown(message_data):
+    """Render a message's content blocks as Markdown."""
+    content = message_data.get("content", "")
+    if isinstance(content, str):
+        return content
+    elif isinstance(content, list):
+        parts = []
+        for block in content:
+            rendered = render_content_block_markdown(block)
+            if rendered:
+                parts.append(rendered)
+        return "\n\n".join(parts)
+    return str(content)
+
+
+def generate_markdown(json_path, output_dir, github_repo=None):
+    """Generate a single Markdown file from a session file.
+
+    Returns the Path to the generated .md file.
+    """
+    data = parse_session_file(json_path)
+    return generate_markdown_from_session_data(
+        data, output_dir, github_repo=github_repo
+    )
+
+
+def generate_markdown_from_session_data(session_data, output_dir, github_repo=None):
+    """Generate Markdown from session data dict (instead of file path).
+
+    Returns the Path to the generated .md file.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    loglines = session_data.get("loglines", [])
+    conversations = _group_conversations(loglines)
+    md_parts = []
+
+    for conv in conversations:
+        for log_type, message_json, timestamp in conv["messages"]:
+            if not message_json:
+                continue
+            try:
+                message_data = json.loads(message_json)
+            except json.JSONDecodeError:
+                continue
+
+            if log_type == "user":
+                if is_tool_result_message(message_data):
+                    role = "Tool reply"
+                else:
+                    role = "User"
+                md_parts.append(f"### {role}")
+                md_parts.append(f"*{timestamp}*\n")
+                md_parts.append(_render_message_content_markdown(message_data))
+            elif log_type == "assistant":
+                md_parts.append("### Assistant")
+                md_parts.append(f"*{timestamp}*\n")
+                md_parts.append(_render_message_content_markdown(message_data))
+
+        md_parts.append("---\n")
+
+    markdown_content = "\n\n".join(md_parts)
+    md_path = output_dir / "transcript.md"
+    md_path.write_text(markdown_content, encoding="utf-8")
+    return md_path
+
+
 @click.group(cls=DefaultGroup, default="local", default_if_no_args=True)
 @click.version_option(None, "-v", "--version", package_name="claude-code-transcripts")
 def cli():
@@ -1516,7 +1694,15 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--markdown",
+    "use_markdown",
+    is_flag=True,
+    help="Output as a single Markdown file instead of HTML.",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, use_markdown
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1567,31 +1753,59 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_file.stem}"
 
     output = Path(output)
-    generate_html(session_file, output, github_repo=repo)
 
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
+    if use_markdown:
+        md_path = generate_markdown(session_file, output, github_repo=repo)
+        _handle_markdown_output(md_path, output, gist, open_browser, auto_open)
+    else:
+        generate_html(session_file, output, github_repo=repo)
 
-    # Copy JSONL file to output directory if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / session_file.name
-        shutil.copy(session_file, json_dest)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
+        # Show output directory
+        click.echo(f"Output: {output.resolve()}")
 
+        # Copy JSONL file to output directory if requested
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / session_file.name
+            shutil.copy(session_file, json_dest)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSONL: {json_dest} ({json_size_kb:.1f} KB)")
+
+        if gist:
+            # Inject gist preview JS and create gist
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
+
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
+
+
+def open_in_editor(file_path):
+    """Open a file in the user's preferred editor, or system default."""
+    import shlex
+
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if editor:
+        parts = shlex.split(editor)
+        subprocess.run(parts + [str(file_path)])
+    else:
+        click.launch(str(file_path))
+
+
+def _handle_markdown_output(md_path, output_dir, gist, open_browser, auto_open):
+    """Handle CLI output after generating a markdown file."""
+    click.echo(f"Generated {md_path.resolve()}")
     if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
         click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+        _gist_id, gist_url = create_gist(output_dir, file_glob="*.md")
         click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
-
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+    elif open_browser:
+        open_in_editor(md_path.resolve())
 
 
 def is_url(path):
@@ -1668,7 +1882,15 @@ def fetch_url_to_tempfile(url):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
+@click.option(
+    "--markdown",
+    "use_markdown",
+    is_flag=True,
+    help="Output as a single Markdown file instead of HTML.",
+)
+def json_cmd(
+    json_file, output, output_auto, repo, gist, include_json, open_browser, use_markdown
+):
     """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
     # Handle URL input
     if is_url(json_file):
@@ -1698,31 +1920,36 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
         )
 
     output = Path(output)
-    generate_html(json_file_path, output, github_repo=repo)
 
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
+    if use_markdown:
+        md_path = generate_markdown(json_file_path, output, github_repo=repo)
+        _handle_markdown_output(md_path, output, gist, open_browser, auto_open)
+    else:
+        generate_html(json_file_path, output, github_repo=repo)
 
-    # Copy JSON file to output directory if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / json_file_path.name
-        shutil.copy(json_file_path, json_dest)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
+        # Show output directory
+        click.echo(f"Output: {output.resolve()}")
 
-    if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        # Copy JSON file to output directory if requested
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / json_file_path.name
+            shutil.copy(json_file_path, json_dest)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        if gist:
+            # Inject gist preview JS and create gist
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
+
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
 
 
 def resolve_credentials(token, org_uuid):
@@ -1792,38 +2019,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
-    conversations = []
-    current_conv = None
-    for entry in loglines:
-        log_type = entry.get("type")
-        timestamp = entry.get("timestamp", "")
-        is_compact_summary = entry.get("isCompactSummary", False)
-        message_data = entry.get("message", {})
-        if not message_data:
-            continue
-        # Convert message dict to JSON string for compatibility with existing render functions
-        message_json = json.dumps(message_data)
-        is_user_prompt = False
-        user_text = None
-        if log_type == "user":
-            content = message_data.get("content", "")
-            text = extract_text_from_content(content)
-            if text:
-                is_user_prompt = True
-                user_text = text
-        if is_user_prompt:
-            if current_conv:
-                conversations.append(current_conv)
-            current_conv = {
-                "user_text": user_text,
-                "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
-                "is_continuation": bool(is_compact_summary),
-            }
-        elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
-    if current_conv:
-        conversations.append(current_conv)
+    conversations = _group_conversations(loglines)
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
@@ -1983,6 +2179,12 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     is_flag=True,
     help="Open the generated index.html in your default browser (default if no -o specified).",
 )
+@click.option(
+    "--markdown",
+    "use_markdown",
+    is_flag=True,
+    help="Output as a single Markdown file instead of HTML.",
+)
 def web_cmd(
     session_id,
     output,
@@ -1993,6 +2195,7 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    use_markdown,
 ):
     """Select and convert a web session from the Claude API to HTML.
 
@@ -2067,33 +2270,40 @@ def web_cmd(
         output = Path(tempfile.gettempdir()) / f"claude-session-{session_id}"
 
     output = Path(output)
-    click.echo(f"Generating HTML in {output}/...")
-    generate_html_from_session_data(session_data, output, github_repo=repo)
 
-    # Show output directory
-    click.echo(f"Output: {output.resolve()}")
+    if use_markdown:
+        md_path = generate_markdown_from_session_data(
+            session_data, output, github_repo=repo
+        )
+        _handle_markdown_output(md_path, output, gist, open_browser, auto_open)
+    else:
+        click.echo(f"Generating HTML in {output}/...")
+        generate_html_from_session_data(session_data, output, github_repo=repo)
 
-    # Save JSON session data if requested
-    if include_json:
-        output.mkdir(exist_ok=True)
-        json_dest = output / f"{session_id}.json"
-        with open(json_dest, "w") as f:
-            json.dump(session_data, f, indent=2)
-        json_size_kb = json_dest.stat().st_size / 1024
-        click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
+        # Show output directory
+        click.echo(f"Output: {output.resolve()}")
 
-    if gist:
-        # Inject gist preview JS and create gist
-        inject_gist_preview_js(output)
-        click.echo("Creating GitHub gist...")
-        gist_id, gist_url = create_gist(output)
-        preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
-        click.echo(f"Gist: {gist_url}")
-        click.echo(f"Preview: {preview_url}")
+        # Save JSON session data if requested
+        if include_json:
+            output.mkdir(exist_ok=True)
+            json_dest = output / f"{session_id}.json"
+            with open(json_dest, "w") as f:
+                json.dump(session_data, f, indent=2)
+            json_size_kb = json_dest.stat().st_size / 1024
+            click.echo(f"JSON: {json_dest} ({json_size_kb:.1f} KB)")
 
-    if open_browser or auto_open:
-        index_url = (output / "index.html").resolve().as_uri()
-        webbrowser.open(index_url)
+        if gist:
+            # Inject gist preview JS and create gist
+            inject_gist_preview_js(output)
+            click.echo("Creating GitHub gist...")
+            gist_id, gist_url = create_gist(output)
+            preview_url = f"https://gisthost.github.io/?{gist_id}/index.html"
+            click.echo(f"Gist: {gist_url}")
+            click.echo(f"Preview: {preview_url}")
+
+        if open_browser or auto_open:
+            index_url = (output / "index.html").resolve().as_uri()
+            webbrowser.open(index_url)
 
 
 @cli.command("all")
