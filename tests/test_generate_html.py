@@ -85,6 +85,15 @@ class TestGenerateHtml:
         page_html = (output_dir / "page-002.html").read_text(encoding="utf-8")
         assert page_html == snapshot_html
 
+    def test_index_link_not_highlighted_on_transcript_pages(self, output_dir):
+        """The index button should not have the same style as the current page button."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        # The index link should NOT be styled like the active/current page
+        assert "index-link" not in page_html
+
     def test_github_repo_autodetect(self, sample_session):
         """Test GitHub repo auto-detection from git push output."""
         loglines = sample_session["loglines"]

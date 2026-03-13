@@ -1,10 +1,10 @@
 {# Pagination for regular pages #}
 {% macro pagination(current_page, total_pages) %}
 {% if total_pages <= 1 %}
-<div class="pagination"><a href="index.html" class="index-link">Index</a></div>
+<div class="pagination"><a href="index.html">Index</a></div>
 {%- else %}
 <div class="pagination">
-<a href="index.html" class="index-link">Index</a>
+<a href="index.html">Index</a>
 {% if current_page > 1 -%}
 <a href="page-{{ '%03d'|format(current_page - 1) }}.html">&larr; Prev</a>
 {%- else -%}
