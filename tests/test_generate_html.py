@@ -1638,3 +1638,64 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestIndexCardOrder:
+    """Tests that index cards preserve original prompt order."""
+
+    def test_index_cards_follow_prompt_order_not_timestamp(self, output_dir):
+        """Cards in index.html must appear in prompt order, even when
+        an earlier prompt has a later timestamp than the next prompt.
+
+        Regression test: when two prompts share near-identical timestamps
+        (sub-second apart) the earlier prompt can have a *later* timestamp
+        due to message ordering in the JSON, causing the index to show
+        #2 before #1.
+        """
+        # Prompt 1 has a LATER timestamp than prompt 2
+        session_data = {
+            "loglines": [
+                {
+                    "type": "user",
+                    "timestamp": "2025-06-01T12:00:00.500Z",
+                    "message": {"role": "user", "content": "First prompt"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-06-01T12:00:01.000Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Reply to first"}],
+                    },
+                },
+                {
+                    "type": "user",
+                    "timestamp": "2025-06-01T12:00:00.100Z",
+                    "message": {"role": "user", "content": "Second prompt"},
+                },
+                {
+                    "type": "assistant",
+                    "timestamp": "2025-06-01T12:00:00.600Z",
+                    "message": {
+                        "role": "assistant",
+                        "content": [{"type": "text", "text": "Reply to second"}],
+                    },
+                },
+            ]
+        }
+        session_file = output_dir / "session.jsonl"
+        with open(session_file, "w") as f:
+            for line in session_data["loglines"]:
+                f.write(json.dumps(line) + "\n")
+
+        generate_html(session_file, output_dir)
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        # Find the positions of #1 and #2 in the HTML
+        pos_1 = index_html.index("#1</span>")
+        pos_2 = index_html.index("#2</span>")
+        assert pos_1 < pos_2, (
+            f"Card #1 (pos {pos_1}) should appear before card #2 (pos {pos_2}) "
+            "in the index, regardless of timestamps"
+        )

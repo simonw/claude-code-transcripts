@@ -1437,16 +1437,16 @@ def generate_html(json_path, output_dir, github_repo=None):
         item_html = _macros.index_item(
             prompt_num, link, conv["timestamp"], rendered_content, stats_html
         )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
+        timeline_items.append((i, conv["timestamp"], item_html))
 
     # Add commits as separate timeline items
     for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
         item_html = _macros.index_commit(
             commit_hash, commit_msg, commit_ts, _github_repo
         )
-        timeline_items.append((commit_ts, "commit", item_html))
+        timeline_items.append((conv_idx, commit_ts, item_html))
 
-    # Sort by timestamp
+    # Sort by original conversation order (preserves prompt sequence)
     timeline_items.sort(key=lambda x: x[0])
     index_items = [item[2] for item in timeline_items]
 
@@ -1911,16 +1911,16 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         item_html = _macros.index_item(
             prompt_num, link, conv["timestamp"], rendered_content, stats_html
         )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
+        timeline_items.append((i, conv["timestamp"], item_html))
 
     # Add commits as separate timeline items
     for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
         item_html = _macros.index_commit(
             commit_hash, commit_msg, commit_ts, _github_repo
         )
-        timeline_items.append((commit_ts, "commit", item_html))
+        timeline_items.append((conv_idx, commit_ts, item_html))
 
-    # Sort by timestamp
+    # Sort by original conversation order (preserves prompt sequence)
     timeline_items.sort(key=lambda x: x[0])
     index_items = [item[2] for item in timeline_items]
 
