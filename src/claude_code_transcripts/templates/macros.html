@@ -5,6 +5,7 @@
 {%- else %}
 <div class="pagination">
 <a href="index.html">Index</a>
+<span class="pagination-sep"></span>
 {% if current_page > 1 -%}
 <a href="page-{{ '%03d'|format(current_page - 1) }}.html">&larr; Prev</a>
 {%- else -%}
@@ -33,15 +34,12 @@
 {%- else %}
 <div class="pagination">
 <span class="current">Index</span>
+<span class="pagination-sep"></span>
 <span class="disabled">&larr; Prev</span>
 {% for page in range(1, total_pages + 1) -%}
 <a href="page-{{ '%03d'|format(page) }}.html">{{ page }}</a>
 {% endfor -%}
-{% if total_pages >= 1 -%}
-<a href="page-001.html">Next &rarr;</a>
-{%- else -%}
 <span class="disabled">Next &rarr;</span>
-{%- endif %}
 </div>
 {%- endif %}
 {% endmacro %}

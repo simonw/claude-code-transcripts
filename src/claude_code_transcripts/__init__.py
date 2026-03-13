@@ -1062,6 +1062,7 @@ pre code { background: none; padding: 0; }
 .pagination a:hover { background: var(--user-bg); }
 .pagination .current { background: var(--user-border); color: white; }
 .pagination .disabled { color: var(--text-muted); border: 1px solid #ddd; }
+.pagination .pagination-sep { width: 1px; padding: 0; margin: 0 4px; background: #ccc; }
 details.continuation { margin-bottom: 16px; }
 details.continuation summary { cursor: pointer; padding: 12px 16px; background: var(--user-bg); border-left: 4px solid var(--user-border); border-radius: 12px; font-weight: 500; color: var(--text-muted); }
 details.continuation summary:hover { background: rgba(25, 118, 210, 0.15); }

@@ -94,6 +94,24 @@ class TestGenerateHtml:
         # The index link should NOT be styled like the active/current page
         assert "index-link" not in page_html
 
+    def test_index_page_has_disabled_next_button(self, output_dir):
+        """On the index page, Next should be disabled since index is separate from transcript pages."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        assert 'Next &rarr;</a>' not in index_html
+        assert 'Next &rarr;</span>' in index_html
+
+    def test_pagination_has_separator_between_index_and_pages(self, output_dir):
+        """A visual separator should exist between the Index button and the page nav buttons."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        for filename in ("index.html", "page-001.html"):
+            html = (output_dir / filename).read_text(encoding="utf-8")
+            assert "pagination-sep" in html
+
     def test_github_repo_autodetect(self, sample_session):
         """Test GitHub repo auto-detection from git push output."""
         loglines = sample_session["loglines"]
