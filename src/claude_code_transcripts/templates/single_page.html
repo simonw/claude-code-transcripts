@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code transcript</title>
+    <style>{{ css|safe }}</style>
+    <style>
+    /* Print/PDF overrides - show all content expanded */
+    .truncatable .truncatable-content { max-height: none !important; overflow: visible !important; }
+    .truncatable::after { display: none !important; }
+    .expand-btn { display: none !important; }
+    .pagination { display: none !important; }
+    details.continuation { display: block; }
+    details.continuation > summary { display: none; }
+    #search-box { display: none !important; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Claude Code transcript</h1>
+        <p style="color: var(--text-muted); margin-bottom: 24px;">{{ prompt_count }} prompts &middot; {{ message_count }} messages</p>
+        {{ messages_html|safe }}
+    </div>
+</body>
+</html>

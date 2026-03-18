@@ -27,6 +27,8 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    extract_conversations,
+    generate_single_page_html,
 )
 
 
@@ -1638,3 +1640,211 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestExtractConversations:
+    """Tests for extract_conversations function."""
+
+    def test_basic_extraction(self):
+        """Test extracting conversations from simple loglines."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:00:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Hi there!"}],
+                },
+            },
+        ]
+        convs = extract_conversations(loglines)
+        assert len(convs) == 1
+        assert convs[0]["user_text"] == "Hello"
+        assert convs[0]["timestamp"] == "2025-01-01T10:00:00.000Z"
+        assert len(convs[0]["messages"]) == 2
+        assert convs[0]["is_continuation"] is False
+
+    def test_multiple_conversations(self):
+        """Test extracting multiple conversations."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "First question"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:00:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "First answer"}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:01:00.000Z",
+                "message": {"role": "user", "content": "Second question"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:01:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Second answer"}],
+                },
+            },
+        ]
+        convs = extract_conversations(loglines)
+        assert len(convs) == 2
+        assert convs[0]["user_text"] == "First question"
+        assert convs[1]["user_text"] == "Second question"
+
+    def test_continuation_flag(self):
+        """Test that isCompactSummary sets is_continuation."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Initial prompt"},
+            },
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T11:00:00.000Z",
+                "isCompactSummary": True,
+                "message": {"role": "user", "content": "Continuation summary"},
+            },
+        ]
+        convs = extract_conversations(loglines)
+        assert len(convs) == 2
+        assert convs[0]["is_continuation"] is False
+        assert convs[1]["is_continuation"] is True
+
+    def test_empty_loglines(self):
+        """Test with empty loglines."""
+        convs = extract_conversations([])
+        assert convs == []
+
+    def test_messages_are_json_strings(self):
+        """Test that messages are stored as (type, json_string, timestamp) tuples."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+        ]
+        convs = extract_conversations(loglines)
+        log_type, message_json, timestamp = convs[0]["messages"][0]
+        assert log_type == "user"
+        assert isinstance(message_json, str)
+        parsed = json.loads(message_json)
+        assert parsed["content"] == "Hello"
+
+
+class TestGenerateSinglePageHtml:
+    """Tests for generate_single_page_html function."""
+
+    def test_renders_all_conversations(self):
+        """Test that all conversations are rendered in a single page."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "First question"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:00:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "First answer"}],
+                },
+            },
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:01:00.000Z",
+                "message": {"role": "user", "content": "Second question"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:01:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Second answer"}],
+                },
+            },
+        ]
+        convs = extract_conversations(loglines)
+        html = generate_single_page_html(convs)
+        assert "First question" in html
+        assert "First answer" in html
+        assert "Second question" in html
+        assert "Second answer" in html
+
+    def test_no_pagination(self):
+        """Test that single page HTML has no pagination links."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+        ]
+        convs = extract_conversations(loglines)
+        html = generate_single_page_html(convs)
+        assert "page-" not in html
+        assert "pagination" not in html.lower() or "display: none" in html
+
+    def test_no_javascript(self):
+        """Test that single page HTML has no JavaScript."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+        ]
+        convs = extract_conversations(loglines)
+        html = generate_single_page_html(convs)
+        assert "<script>" not in html
+
+    def test_no_truncation(self):
+        """Test that truncation CSS is overridden."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+        ]
+        convs = extract_conversations(loglines)
+        html = generate_single_page_html(convs)
+        assert "max-height: none" in html
+        assert "expand-btn" in html and "display: none" in html
+
+    def test_has_stats(self):
+        """Test that prompt and message counts are shown."""
+        loglines = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2025-01-01T10:00:05.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Hi!"}],
+                },
+            },
+        ]
+        convs = extract_conversations(loglines)
+        html = generate_single_page_html(convs)
+        assert "1 prompts" in html
+        assert "2 messages" in html

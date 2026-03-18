@@ -17,6 +17,11 @@ dependencies = [
     "questionary",
 ]
 
+[project.optional-dependencies]
+pdf = ["reportlab>=4.0"]
+docx = ["python-docx>=1.1"]
+export = ["reportlab>=4.0", "python-docx>=1.1"]
+
 [project.urls]
 Homepage = "https://github.com/simonw/claude-code-transcripts"
 Changelog = "https://github.com/simonw/claude-code-transcripts/releases"

@@ -1286,6 +1286,60 @@ def create_gist(output_dir, public=False):
         )
 
 
+def _open_file(filepath):
+    """Open a file with the system's default application."""
+    filepath = Path(filepath)
+    if platform.system() == "Darwin":
+        subprocess.run(["open", str(filepath)])
+    elif platform.system() == "Windows":
+        os.startfile(str(filepath))
+    else:
+        subprocess.run(["xdg-open", str(filepath)])
+
+
+def _run_export(
+    source, output, output_auto, file_stem, output_format, repo, open_browser
+):
+    """Run PDF or DOCX export. Shared logic for local/json/web CLI commands.
+
+    Args:
+        source: Path to session file, or dict with 'loglines' key
+        output: User-provided output path (or None)
+        output_auto: Whether --output-auto was used
+        file_stem: Base name for auto-generated output file
+        output_format: "pdf" or "docx"
+        repo: GitHub repo string (or None)
+        open_browser: Whether --open was passed
+
+    Returns:
+        The resolved output Path.
+    """
+    ext = f".{output_format}"
+    auto_open = output is None
+    if output_auto:
+        parent_dir = Path(output) if output else Path(".")
+        output = parent_dir / f"{file_stem}{ext}"
+    elif output is None:
+        output = Path(tempfile.gettempdir()) / f"claude-session-{file_stem}{ext}"
+    output = Path(output)
+    if output.suffix != ext:
+        output = output.with_suffix(ext)
+
+    if output_format == "pdf":
+        from .pdf_export import generate_pdf as _generate_pdf
+
+        _generate_pdf(source, output, github_repo=repo)
+    else:
+        from .docx_export import generate_docx
+
+        generate_docx(source, output, github_repo=repo)
+
+    click.echo(f"Output: {output.resolve()}")
+    if open_browser or auto_open:
+        _open_file(output)
+    return output
+
+
 def generate_pagination_html(current_page, total_pages):
     return _macros.pagination(current_page, total_pages)
 
@@ -1293,6 +1347,15 @@ def generate_pagination_html(current_page, total_pages):
 def generate_index_pagination_html(total_pages):
     """Generate pagination for index page where Index is current (first page)."""
     return _macros.index_pagination(total_pages)
+
+
+from .export_helpers import (  # noqa: E402
+    extract_conversations,
+    load_conversations,
+    count_prompts_and_messages,
+    generate_single_page_html,
+    generate_pdf,
+)
 
 
 def generate_html(json_path, output_dir, github_repo=None):
@@ -1318,38 +1381,7 @@ def generate_html(json_path, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
-    conversations = []
-    current_conv = None
-    for entry in loglines:
-        log_type = entry.get("type")
-        timestamp = entry.get("timestamp", "")
-        is_compact_summary = entry.get("isCompactSummary", False)
-        message_data = entry.get("message", {})
-        if not message_data:
-            continue
-        # Convert message dict to JSON string for compatibility with existing render functions
-        message_json = json.dumps(message_data)
-        is_user_prompt = False
-        user_text = None
-        if log_type == "user":
-            content = message_data.get("content", "")
-            text = extract_text_from_content(content)
-            if text:
-                is_user_prompt = True
-                user_text = text
-        if is_user_prompt:
-            if current_conv:
-                conversations.append(current_conv)
-            current_conv = {
-                "user_text": user_text,
-                "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
-                "is_continuation": bool(is_compact_summary),
-            }
-        elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
-    if current_conv:
-        conversations.append(current_conv)
+    conversations = extract_conversations(loglines)
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
@@ -1516,8 +1548,21 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
-    """Select and convert a local Claude Code session to HTML."""
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    type=click.Choice(["html", "pdf", "docx"], case_sensitive=False),
+    default="html",
+    help="Output format (default: html).",
+)
+def local_cmd(
+    output, output_auto, repo, gist, include_json, open_browser, limit, output_format
+):
+    """Select and convert a local Claude Code session to HTML, PDF, or DOCX."""
+    if gist and output_format != "html":
+        raise click.ClickException("--gist is only supported with HTML format.")
+
     projects_folder = Path.home() / ".claude" / "projects"
 
     if not projects_folder.exists():
@@ -1556,11 +1601,21 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
 
     session_file = selected
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
+    if output_format in ("pdf", "docx"):
+        _run_export(
+            session_file,
+            output,
+            output_auto,
+            session_file.stem,
+            output_format,
+            repo,
+            open_browser,
+        )
+        return
+
+    # HTML format (original behavior)
     auto_open = output is None and not gist and not output_auto
     if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
         parent_dir = Path(output) if output else Path(".")
         output = parent_dir / session_file.stem
     elif output is None:
@@ -1639,7 +1694,7 @@ def fetch_url_to_tempfile(url):
     "-o",
     "--output",
     type=click.Path(),
-    help="Output directory. If not specified, writes to temp dir and opens in browser.",
+    help="Output directory (or file for pdf/docx). If not specified, writes to temp dir and opens.",
 )
 @click.option(
     "-a",
@@ -1666,10 +1721,30 @@ def fetch_url_to_tempfile(url):
     "--open",
     "open_browser",
     is_flag=True,
-    help="Open the generated index.html in your default browser (default if no -o specified).",
+    help="Open the generated output in your default application (default if no -o specified).",
 )
-def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_browser):
-    """Convert a Claude Code session JSON/JSONL file or URL to HTML."""
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    type=click.Choice(["html", "pdf", "docx"], case_sensitive=False),
+    default="html",
+    help="Output format (default: html).",
+)
+def json_cmd(
+    json_file,
+    output,
+    output_auto,
+    repo,
+    gist,
+    include_json,
+    open_browser,
+    output_format,
+):
+    """Convert a Claude Code session JSON/JSONL file or URL to HTML, PDF, or DOCX."""
+    if gist and output_format != "html":
+        raise click.ClickException("--gist is only supported with HTML format.")
+
     # Handle URL input
     if is_url(json_file):
         click.echo(f"Fetching {json_file}...")
@@ -1684,18 +1759,27 @@ def json_cmd(json_file, output, output_auto, repo, gist, include_json, open_brow
             raise click.ClickException(f"File not found: {json_file}")
         url_name = None
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
+    file_stem = url_name or json_file_path.stem
+
+    if output_format in ("pdf", "docx"):
+        _run_export(
+            json_file_path,
+            output,
+            output_auto,
+            file_stem,
+            output_format,
+            repo,
+            open_browser,
+        )
+        return
+
+    # HTML format (original behavior)
     auto_open = output is None and not gist and not output_auto
     if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
         parent_dir = Path(output) if output else Path(".")
-        output = parent_dir / (url_name or json_file_path.stem)
+        output = parent_dir / file_stem
     elif output is None:
-        output = (
-            Path(tempfile.gettempdir())
-            / f"claude-session-{url_name or json_file_path.stem}"
-        )
+        output = Path(tempfile.gettempdir()) / f"claude-session-{file_stem}"
 
     output = Path(output)
     generate_html(json_file_path, output, github_repo=repo)
@@ -1792,38 +1876,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
-    conversations = []
-    current_conv = None
-    for entry in loglines:
-        log_type = entry.get("type")
-        timestamp = entry.get("timestamp", "")
-        is_compact_summary = entry.get("isCompactSummary", False)
-        message_data = entry.get("message", {})
-        if not message_data:
-            continue
-        # Convert message dict to JSON string for compatibility with existing render functions
-        message_json = json.dumps(message_data)
-        is_user_prompt = False
-        user_text = None
-        if log_type == "user":
-            content = message_data.get("content", "")
-            text = extract_text_from_content(content)
-            if text:
-                is_user_prompt = True
-                user_text = text
-        if is_user_prompt:
-            if current_conv:
-                conversations.append(current_conv)
-            current_conv = {
-                "user_text": user_text,
-                "timestamp": timestamp,
-                "messages": [(log_type, message_json, timestamp)],
-                "is_continuation": bool(is_compact_summary),
-            }
-        elif current_conv:
-            current_conv["messages"].append((log_type, message_json, timestamp))
-    if current_conv:
-        conversations.append(current_conv)
+    conversations = extract_conversations(loglines)
 
     total_convs = len(conversations)
     total_pages = (total_convs + PROMPTS_PER_PAGE - 1) // PROMPTS_PER_PAGE
@@ -1981,7 +2034,15 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     "--open",
     "open_browser",
     is_flag=True,
-    help="Open the generated index.html in your default browser (default if no -o specified).",
+    help="Open the generated output in your default application (default if no -o specified).",
+)
+@click.option(
+    "-f",
+    "--format",
+    "output_format",
+    type=click.Choice(["html", "pdf", "docx"], case_sensitive=False),
+    default="html",
+    help="Output format (default: html).",
 )
 def web_cmd(
     session_id,
@@ -1993,8 +2054,9 @@ def web_cmd(
     gist,
     include_json,
     open_browser,
+    output_format,
 ):
-    """Select and convert a web session from the Claude API to HTML.
+    """Select and convert a web session from the Claude API to HTML, PDF, or DOCX.
 
     If SESSION_ID is not provided, displays an interactive picker to select a session.
     """
@@ -2056,11 +2118,24 @@ def web_cmd(
     except httpx.RequestError as e:
         raise click.ClickException(f"Network error: {e}")
 
-    # Determine output directory and whether to open browser
-    # If no -o specified, use temp dir and open browser by default
+    if gist and output_format != "html":
+        raise click.ClickException("--gist is only supported with HTML format.")
+
+    if output_format in ("pdf", "docx"):
+        _run_export(
+            session_data,
+            output,
+            output_auto,
+            session_id,
+            output_format,
+            repo,
+            open_browser,
+        )
+        return
+
+    # HTML format (original behavior)
     auto_open = output is None and not gist and not output_auto
     if output_auto:
-        # Use -o as parent dir (or current dir), with auto-named subdirectory
         parent_dir = Path(output) if output else Path(".")
         output = parent_dir / session_id
     elif output is None:
