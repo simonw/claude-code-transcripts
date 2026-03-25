@@ -48,6 +48,30 @@ LONG_TEXT_THRESHOLD = (
     300  # Characters - text blocks longer than this are shown in index
 )
 
+# Regex to detect skill content blocks injected by Claude Code
+SKILL_CONTENT_PATTERN = re.compile(
+    r"^Base directory for this skill:\s*(.+?)$", re.MULTILINE
+)
+# Regex to extract skill name from the first markdown heading
+SKILL_NAME_PATTERN = re.compile(r"^#\s+(.+?)$", re.MULTILINE)
+
+
+def detect_skill_content(text):
+    """Detect if a text block is a skill definition injected by Claude Code.
+
+    Returns (skill_name, True) if skill content detected, (None, False) otherwise.
+    """
+    match = SKILL_CONTENT_PATTERN.search(text)
+    if match:
+        # Try to extract skill name from the first heading
+        name_match = SKILL_NAME_PATTERN.search(text)
+        if name_match:
+            return name_match.group(1).strip(), True
+        # Fall back to directory name
+        path = match.group(1).strip()
+        return path.rsplit("/", 1)[-1], True
+    return None, False
+
 
 def extract_text_from_content(content):
     """Extract plain text from message content.
@@ -62,6 +86,9 @@ def extract_text_from_content(content):
         The extracted text as a string, or empty string if no text found.
     """
     if isinstance(content, str):
+        _, is_skill = detect_skill_content(content)
+        if is_skill:
+            return ""
         return content.strip()
     elif isinstance(content, list):
         # Extract text from content blocks of type "text"
@@ -70,7 +97,10 @@ def extract_text_from_content(content):
             if isinstance(block, dict) and block.get("type") == "text":
                 text = block.get("text", "")
                 if text:
-                    texts.append(text)
+                    # Skip skill content from text extraction
+                    _, is_skill = detect_skill_content(text)
+                    if not is_skill:
+                        texts.append(text)
         return " ".join(texts).strip()
     return ""
 
@@ -840,14 +870,29 @@ def render_content_block(block):
         return format_json(block)
 
 
+def render_user_content_block(block):
+    """Render a content block within a user message, collapsing skill content."""
+    if isinstance(block, dict) and block.get("type") == "text":
+        text = block.get("text", "")
+        skill_name, is_skill = detect_skill_content(text)
+        if is_skill:
+            content_html = render_markdown_text(text)
+            return _macros.skill_content(skill_name, content_html)
+    return render_content_block(block)
+
+
 def render_user_message_content(message_data):
     content = message_data.get("content", "")
     if isinstance(content, str):
+        skill_name, is_skill = detect_skill_content(content)
+        if is_skill:
+            content_html = render_markdown_text(content)
+            return _macros.skill_content(skill_name, content_html)
         if is_json_like(content):
             return _macros.user_content(format_json(content))
         return _macros.user_content(render_markdown_text(content))
     elif isinstance(content, list):
-        return "".join(render_content_block(block) for block in content)
+        return "".join(render_user_content_block(block) for block in content)
     return f"<p>{html.escape(str(content))}</p>"
 
 
@@ -896,7 +941,9 @@ def analyze_conversation(messages):
                         commits.append((match.group(1), match.group(2), timestamp))
             elif block_type == "text":
                 text = block.get("text", "")
-                if len(text) >= LONG_TEXT_THRESHOLD:
+                # Skip skill content from index long texts
+                _, is_skill = detect_skill_content(text)
+                if not is_skill and len(text) >= LONG_TEXT_THRESHOLD:
                     long_texts.append(text)
 
     return {
@@ -1067,6 +1114,11 @@ details.continuation { margin-bottom: 16px; }
 details.continuation summary { cursor: pointer; padding: 12px 16px; background: var(--user-bg); border-left: 4px solid var(--user-border); border-radius: 12px; font-weight: 500; color: var(--text-muted); }
 details.continuation summary:hover { background: rgba(25, 118, 210, 0.15); }
 details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom: 0; }
+details.skill-content { margin-bottom: 8px; }
+details.skill-content summary { cursor: pointer; padding: 8px 12px; background: rgba(0,0,0,0.03); border-left: 3px solid var(--text-muted); border-radius: 8px; font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
+details.skill-content summary:hover { background: rgba(0,0,0,0.06); }
+details.skill-content[open] summary { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+details.skill-content .message-content { padding: 8px 12px; font-size: 0.85rem; max-height: 400px; overflow-y: auto; }
 .index-item { margin-bottom: 16px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); background: var(--user-bg); border-left: 4px solid var(--user-border); }
 .index-item a { display: block; text-decoration: none; color: inherit; }
 .index-item a:hover { background: rgba(25, 118, 210, 0.1); }

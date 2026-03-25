@@ -100,6 +100,11 @@ details.continuation { margin-bottom: 16px; }
 details.continuation summary { cursor: pointer; padding: 12px 16px; background: var(--user-bg); border-left: 4px solid var(--user-border); border-radius: 12px; font-weight: 500; color: var(--text-muted); }
 details.continuation summary:hover { background: rgba(25, 118, 210, 0.15); }
 details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom: 0; }
+details.skill-content { margin-bottom: 8px; }
+details.skill-content summary { cursor: pointer; padding: 8px 12px; background: rgba(0,0,0,0.03); border-left: 3px solid var(--text-muted); border-radius: 8px; font-size: 0.85rem; color: var(--text-muted); font-style: italic; }
+details.skill-content summary:hover { background: rgba(0,0,0,0.06); }
+details.skill-content[open] summary { border-radius: 8px 8px 0 0; margin-bottom: 0; }
+details.skill-content .message-content { padding: 8px 12px; font-size: 0.85rem; max-height: 400px; overflow-y: auto; }
 .index-item { margin-bottom: 16px; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1); background: var(--user-bg); border-left: 4px solid var(--user-border); }
 .index-item a { display: block; text-decoration: none; color: inherit; }
 .index-item a:hover { background: rgba(25, 118, 210, 0.1); }

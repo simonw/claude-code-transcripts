@@ -161,6 +161,11 @@
 <details class="continuation"><summary>Session continuation summary</summary>{{ content_html|safe }}</details>
 {%- endmacro %}
 
+{# Skill content - collapsed by default, shows only skill name #}
+{% macro skill_content(skill_name, content_html) %}
+<details class="skill-content"><summary>Skill: {{ skill_name }}</summary>{{ content_html|safe }}</details>
+{%- endmacro %}
+
 {# Index item (prompt) - rendered_content and stats_html are pre-rendered so need |safe #}
 {% macro index_item(prompt_num, link, timestamp, rendered_content, stats_html) %}
 <div class="index-item"><a href="{{ link }}"><div class="index-item-header"><span class="index-item-number">#{{ prompt_num }}</span><time datetime="{{ timestamp }}" data-timestamp="{{ timestamp }}">{{ timestamp }}</time></div><div class="index-item-content">{{ rendered_content|safe }}</div></a>{{ stats_html|safe }}</div>
