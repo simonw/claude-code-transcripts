@@ -30,9 +30,12 @@ uvx claude-code-transcripts --help
 
 This tool converts Claude Code session files into browseable multi-page HTML transcripts.
 
-There are four commands available:
+There are seven commands available:
 
-- `local` (default) - select from local Claude Code sessions stored in `~/.claude/projects`
+- `local` (default) - select from recent local Claude Code or Cowork sessions
+- `code` - shortcut for `local --source code`
+- `cowork` - shortcut for `local --source cowork`
+- `project` - select a single project and convert all its sessions to an archive
 - `web` - select from web sessions via the Claude API
 - `json` - convert a specific JSON or JSONL session file
 - `all` - convert all local sessions to a browsable HTML archive
@@ -70,11 +73,38 @@ claude-code-transcripts
 claude-code-transcripts local
 ```
 
+By default the picker shows sessions from both Claude Code and Claude Cowork. Use `--source` to restrict to one:
+
+```bash
+claude-code-transcripts local --source code    # Code sessions only
+claude-code-transcripts local --source cowork  # Cowork sessions only
+# or use the shortcut commands:
+claude-code-transcripts code
+claude-code-transcripts cowork
+```
+
 Use `--limit` to control how many sessions are shown (default: 10):
 
 ```bash
 claude-code-transcripts local --limit 20
 ```
+
+### Converting a single project
+
+Select a project and convert all of its sessions to a browsable HTML archive:
+
+```bash
+claude-code-transcripts project
+```
+
+This presents an interactive picker listing all your projects with their session counts. After you select one, it generates the same archive structure as the `all` command but for only that project.
+
+Options:
+
+- `-s, --source` - source: `code` (default Code path), `cowork`, or a path to a projects directory
+- `-o, --output DIRECTORY` - output directory (default: `./claude-archive`)
+- `--open` - open the generated project index in your browser
+- `--json` - include the original session files in the output directory
 
 ### Web sessions
 
@@ -188,7 +218,7 @@ This creates a directory structure with:
 
 Options:
 
-- `-s, --source DIRECTORY` - source directory (default: `~/.claude/projects`)
+- `-s, --source` - source: `code` (default Code path), `cowork`, or a path to a projects directory. Omit to include both Code and Cowork.
 - `-o, --output DIRECTORY` - output directory (default: `./claude-archive`)
 - `--include-agents` - include agent session files (excluded by default)
 - `--dry-run` - show what would be converted without creating files
@@ -217,6 +247,10 @@ To contribute to this tool, first checkout the code. You can run the tests using
 ```bash
 cd claude-code-transcripts
 uv run pytest
+```
+To run tests with code coverage:
+```bash
+uv run pytest --cov=claude_code_transcripts --cov-report=term-missing
 ```
 And run your local development copy of the tool like this:
 ```bash

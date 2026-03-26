@@ -7,27 +7,31 @@ from pathlib import Path
 import pytest
 from syrupy.extensions.single_file import SingleFileSnapshotExtension, WriteMode
 
-from claude_code_transcripts import (
-    generate_html,
-    detect_github_repo,
-    render_markdown_text,
-    format_json,
-    is_json_like,
-    render_todo_write,
-    render_write_tool,
-    render_edit_tool,
-    render_bash_tool,
-    render_content_block,
-    analyze_conversation,
-    format_tool_stats,
-    is_tool_result_message,
-    inject_gist_preview_js,
-    create_gist,
-    GIST_PREVIEW_JS,
-    parse_session_file,
-    get_session_summary,
-    find_local_sessions,
+from claude_code_transcripts import cli
+from claude_code_transcripts.html_generation.generator import (
+    _detect_github_repo as detect_github_repo,
 )
+from claude_code_transcripts.html_generation import (
+    GIST_PREVIEW_JS,
+    create_gist,
+    generate_html,
+    inject_gist_preview_js,
+)
+from claude_code_transcripts.parser import parse_session_file
+from claude_code_transcripts.html_generation.renderer import (
+    _analyze_conversation as analyze_conversation,
+    _format_json as format_json,
+    _format_tool_stats as format_tool_stats,
+    _is_json_like as is_json_like,
+    _is_tool_result_message as is_tool_result_message,
+    _render_bash_tool as render_bash_tool,
+    _render_content_block as render_content_block,
+    _render_edit_tool as render_edit_tool,
+    _render_markdown_text as render_markdown_text,
+    _render_todo_write as render_todo_write,
+    _render_write_tool as render_write_tool,
+)
+from claude_code_transcripts.sessions import find_local_sessions, get_session_summary
 
 
 class HTMLSnapshotExtension(SingleFileSnapshotExtension):
@@ -35,6 +39,11 @@ class HTMLSnapshotExtension(SingleFileSnapshotExtension):
 
     _write_mode = WriteMode.TEXT
     file_extension = "html"
+
+
+def generate_html_from_file(path, output_dir, **kwargs):
+    """Test helper: parse a session file then call generate_html with loglines."""
+    generate_html(parse_session_file(path), output_dir, **kwargs)
 
 
 @pytest.fixture
@@ -64,7 +73,7 @@ class TestGenerateHtml:
     def test_generates_index_html(self, output_dir, snapshot_html):
         """Test index.html generation."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert index_html == snapshot_html
@@ -72,7 +81,7 @@ class TestGenerateHtml:
     def test_generates_page_001_html(self, output_dir, snapshot_html):
         """Test page-001.html generation."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
         assert page_html == snapshot_html
@@ -80,7 +89,7 @@ class TestGenerateHtml:
     def test_generates_page_002_html(self, output_dir, snapshot_html):
         """Test page-002.html generation (continuation page)."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         page_html = (output_dir / "page-002.html").read_text(encoding="utf-8")
         assert page_html == snapshot_html
@@ -108,7 +117,7 @@ class TestGenerateHtml:
         output_dir = tmp_path / "output"
         output_dir.mkdir()
 
-        generate_html(jsonl_file, output_dir)
+        generate_html_from_file(jsonl_file, output_dir)
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         # Should have 1 prompt, not 0
@@ -286,21 +295,13 @@ class TestRenderContentBlock:
 
     def test_tool_result_with_commit(self, snapshot_html):
         """Test tool result with git commit output."""
-        # Need to set the global _github_repo for commit link rendering
-        import claude_code_transcripts
-
-        old_repo = claude_code_transcripts._github_repo
-        claude_code_transcripts._github_repo = "example/repo"
-        try:
-            block = {
-                "type": "tool_result",
-                "content": "[main abc1234] Add new feature\n 2 files changed, 10 insertions(+)",
-                "is_error": False,
-            }
-            result = render_content_block(block)
-            assert result == snapshot_html
-        finally:
-            claude_code_transcripts._github_repo = old_repo
+        block = {
+            "type": "tool_result",
+            "content": "[main abc1234] Add new feature\n 2 files changed, 10 insertions(+)",
+            "is_error": False,
+        }
+        result = render_content_block(block, github_repo="example/repo")
+        assert result == snapshot_html
 
     def test_tool_result_with_image(self, snapshot_html):
         """Test tool result containing image blocks in content array.
@@ -684,9 +685,9 @@ class TestSessionGistOption:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock tempfile.gettempdir to use our tmp_path
-        monkeypatch.setattr(
-            "claude_code_transcripts.tempfile.gettempdir", lambda: str(tmp_path)
-        )
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         runner = CliRunner()
         result = runner.invoke(
@@ -820,7 +821,7 @@ class TestContinuationLongTexts:
         session_file.write_text(json.dumps(session_data), encoding="utf-8")
 
         # Generate HTML
-        generate_html(session_file, output_dir)
+        generate_html_from_file(session_file, output_dir)
 
         # Read the index.html
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
@@ -954,9 +955,9 @@ class TestImportGistOption:
         monkeypatch.setattr(subprocess, "run", mock_run)
 
         # Mock tempfile.gettempdir
-        monkeypatch.setattr(
-            "claude_code_transcripts.tempfile.gettempdir", lambda: str(tmp_path)
-        )
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1025,7 +1026,9 @@ class TestOpenOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        import webbrowser
+
+        monkeypatch.setattr(webbrowser, "open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1060,7 +1063,9 @@ class TestOpenOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        import webbrowser
+
+        monkeypatch.setattr(webbrowser, "open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1092,10 +1097,9 @@ class TestParseSessionFile:
         fixture_path = Path(__file__).parent / "sample_session.json"
         result = parse_session_file(fixture_path)
 
-        assert "loglines" in result
-        assert len(result["loglines"]) > 0
+        assert len(result) > 0
         # Check first entry
-        first = result["loglines"][0]
+        first = result[0]
         assert first["type"] == "user"
         assert "timestamp" in first
         assert "message" in first
@@ -1105,10 +1109,9 @@ class TestParseSessionFile:
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
         result = parse_session_file(fixture_path)
 
-        assert "loglines" in result
-        assert len(result["loglines"]) > 0
+        assert len(result) > 0
         # Check structure matches JSON format
-        for entry in result["loglines"]:
+        for entry in result:
             assert "type" in entry
             # Skip summary entries which don't have message
             if entry["type"] in ("user", "assistant"):
@@ -1121,7 +1124,7 @@ class TestParseSessionFile:
         result = parse_session_file(fixture_path)
 
         # None of the loglines should be summary or file-history-snapshot
-        for entry in result["loglines"]:
+        for entry in result:
             assert entry["type"] in ("user", "assistant")
 
     def test_jsonl_preserves_message_content(self):
@@ -1130,13 +1133,13 @@ class TestParseSessionFile:
         result = parse_session_file(fixture_path)
 
         # Find the first user message
-        user_msg = next(e for e in result["loglines"] if e["type"] == "user")
+        user_msg = next(e for e in result if e["type"] == "user")
         assert user_msg["message"]["content"] == "Create a hello world function"
 
     def test_jsonl_generates_html(self, output_dir, snapshot_html):
         """Test that JSONL files can be converted to HTML."""
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
-        generate_html(fixture_path, output_dir)
+        generate_html_from_file(fixture_path, output_dir)
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
         assert "hello world" in index_html.lower()
@@ -1302,13 +1305,20 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test local session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 
@@ -1338,13 +1348,20 @@ class TestLocalSessionCLI:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test default session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 
@@ -1449,7 +1466,9 @@ class TestOutputAutoOption:
             opened_urls.append(url)
             return True
 
-        monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+        import webbrowser
+
+        monkeypatch.setattr(webbrowser, "open", mock_open)
 
         runner = CliRunner()
         result = runner.invoke(
@@ -1482,13 +1501,20 @@ class TestOutputAutoOption:
         # Mock Path.home() to return our tmp_path
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
 
-        # Mock questionary.select to return the session file
+        # Mock questionary.select to return the session dict
         class MockSelect:
             def __init__(self, *args, **kwargs):
                 pass
 
             def ask(self):
-                return session_file
+                return {
+                    "mtime": session_file.stat().st_mtime,
+                    "size_kb": session_file.stat().st_size / 1024,
+                    "source": "Code",
+                    "title": "Test local session",
+                    "session_file": session_file,
+                    "transcript_label": "Claude Code",
+                }
 
         monkeypatch.setattr(questionary, "select", MockSelect)
 
@@ -1567,7 +1593,7 @@ class TestSearchFeature:
     def test_search_box_in_index_html(self, output_dir):
         """Test that search box is present in index.html."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
@@ -1581,7 +1607,7 @@ class TestSearchFeature:
     def test_search_modal_in_index_html(self, output_dir):
         """Test that search modal dialog is present in index.html."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
@@ -1593,7 +1619,7 @@ class TestSearchFeature:
     def test_search_javascript_present(self, output_dir):
         """Test that search JavaScript functionality is present."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
@@ -1607,7 +1633,7 @@ class TestSearchFeature:
     def test_search_css_present(self, output_dir):
         """Test that search CSS styles are present."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
@@ -1619,7 +1645,7 @@ class TestSearchFeature:
     def test_search_box_hidden_by_default_in_css(self, output_dir):
         """Test that search box is hidden by default (for progressive enhancement)."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 
@@ -1632,7 +1658,7 @@ class TestSearchFeature:
     def test_search_total_pages_available(self, output_dir):
         """Test that total_pages is available to JavaScript for fetching."""
         fixture_path = Path(__file__).parent / "sample_session.json"
-        generate_html(fixture_path, output_dir, github_repo="example/project")
+        generate_html_from_file(fixture_path, output_dir, github_repo="example/project")
 
         index_html = (output_dir / "index.html").read_text(encoding="utf-8")
 

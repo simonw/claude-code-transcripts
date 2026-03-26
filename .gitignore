@@ -2,3 +2,5 @@
 __pycache__
 uv.lock
 .playwright-mcp/
+htmlcov/
+.coverage

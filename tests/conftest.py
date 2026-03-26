@@ -12,5 +12,7 @@ def mock_webbrowser_open(monkeypatch):
         opened_urls.append(url)
         return True
 
-    monkeypatch.setattr("claude_code_transcripts.webbrowser.open", mock_open)
+    import webbrowser
+
+    monkeypatch.setattr(webbrowser, "open", mock_open)
     return opened_urls

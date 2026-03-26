@@ -2,16 +2,44 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
 
-from claude_code_transcripts import (
-    cli,
-    find_all_sessions,
-    get_project_display_name,
+from claude_code_transcripts import cli
+from claude_code_transcripts.parser import parse_session_file
+from claude_code_transcripts.sessions import find_all_sessions, get_project_display_name
+from claude_code_transcripts.html_generation import (
+    Project,
+    Session,
     generate_batch_html,
 )
+
+
+def build_projects(source_dir, output_dir):
+    """Test helper: build list[Project] from a source directory and output base."""
+    raw_projects = find_all_sessions(source_dir)
+    projects = []
+    for raw_project in raw_projects:
+        project_dir = output_dir / raw_project["name"]
+        sessions = []
+        for raw_session in raw_project["sessions"]:
+            session_name = raw_session["path"].stem
+            sessions.append(
+                Session(
+                    name=session_name,
+                    session_dir=project_dir / session_name,
+                    loglines=parse_session_file(raw_session["path"]),
+                    size_kb=raw_session["size"] / 1024,
+                )
+            )
+        projects.append(
+            Project(
+                name=raw_project["name"], project_dir=project_dir, sessions=sessions
+            )
+        )
+    return projects
 
 
 @pytest.fixture
@@ -169,31 +197,31 @@ class TestGenerateBatchHtml:
 
     def test_creates_output_directory(self, mock_projects_dir, output_dir):
         """Test that output directory is created."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
         assert output_dir.exists()
 
     def test_creates_master_index(self, mock_projects_dir, output_dir):
         """Test that master index.html is created."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
         assert (output_dir / "index.html").exists()
 
     def test_creates_project_directories(self, mock_projects_dir, output_dir):
         """Test that project directories are created."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         assert (output_dir / "project-a").exists()
         assert (output_dir / "project-b").exists()
 
     def test_creates_project_indexes(self, mock_projects_dir, output_dir):
         """Test that project index.html files are created."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         assert (output_dir / "project-a" / "index.html").exists()
         assert (output_dir / "project-b" / "index.html").exists()
 
     def test_creates_session_directories(self, mock_projects_dir, output_dir):
         """Test that session directories are created with transcripts."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         # Check project-a has session directories
         project_a_dir = output_dir / "project-a"
@@ -206,7 +234,7 @@ class TestGenerateBatchHtml:
 
     def test_master_index_lists_all_projects(self, mock_projects_dir, output_dir):
         """Test that master index lists all projects."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         index_html = (output_dir / "index.html").read_text()
         assert "project-a" in index_html
@@ -214,7 +242,7 @@ class TestGenerateBatchHtml:
 
     def test_master_index_shows_session_counts(self, mock_projects_dir, output_dir):
         """Test that master index shows session counts per project."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         index_html = (output_dir / "index.html").read_text()
         # project-a has 2 sessions, project-b has 1
@@ -223,7 +251,7 @@ class TestGenerateBatchHtml:
 
     def test_project_index_lists_sessions(self, mock_projects_dir, output_dir):
         """Test that project index lists all sessions."""
-        generate_batch_html(mock_projects_dir, output_dir)
+        generate_batch_html(build_projects(mock_projects_dir, output_dir), output_dir)
 
         project_a_index = (output_dir / "project-a" / "index.html").read_text()
         # Should contain links to session directories
@@ -232,7 +260,9 @@ class TestGenerateBatchHtml:
 
     def test_returns_statistics(self, mock_projects_dir, output_dir):
         """Test that batch generation returns statistics."""
-        stats = generate_batch_html(mock_projects_dir, output_dir)
+        stats = generate_batch_html(
+            build_projects(mock_projects_dir, output_dir), output_dir
+        )
 
         assert stats["total_projects"] == 2
         assert stats["total_sessions"] == 3  # 2 + 1
@@ -247,7 +277,9 @@ class TestGenerateBatchHtml:
             progress_calls.append((project_name, session_name, current, total))
 
         generate_batch_html(
-            mock_projects_dir, output_dir, progress_callback=on_progress
+            build_projects(mock_projects_dir, output_dir),
+            output_dir,
+            progress_callback=on_progress,
         )
 
         # Should be called for each session (3 total)
@@ -259,44 +291,66 @@ class TestGenerateBatchHtml:
         """Test that failed session conversion doesn't crash the batch."""
         from unittest.mock import patch
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            projects_dir = Path(tmpdir)
+        loglines1 = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-01T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello from session 1"},
+            }
+        ]
+        loglines2 = [
+            {
+                "type": "user",
+                "timestamp": "2025-01-02T10:00:00.000Z",
+                "message": {"role": "user", "content": "Hello from session 2"},
+            }
+        ]
 
-            # Create a project with 2 sessions
-            project = projects_dir / "-home-user-projects-test"
-            project.mkdir(parents=True)
+        project_dir = output_dir / "test-project"
+        projects = [
+            Project(
+                name="test-project",
+                project_dir=project_dir,
+                sessions=[
+                    Session(
+                        name="session1",
+                        session_dir=project_dir / "session1",
+                        loglines=loglines1,
+                    ),
+                    Session(
+                        name="session2",
+                        session_dir=project_dir / "session2",
+                        loglines=loglines2,
+                    ),
+                ],
+            )
+        ]
 
-            # Session 1
-            session1 = project / "session1.jsonl"
-            session1.write_text(
-                '{"type": "user", "timestamp": "2025-01-01T10:00:00.000Z", "message": {"role": "user", "content": "Hello from session 1"}}\n'
+        from claude_code_transcripts.html_generation import (
+            generate_html as original_generate_html,
+        )
+
+        def mock_generate_html(
+            loglines, session_dir, github_repo=None, transcript_label="Claude Code"
+        ):
+            if "session1" in str(session_dir):
+                raise RuntimeError("Simulated failure")
+            return original_generate_html(
+                loglines, session_dir, github_repo, transcript_label=transcript_label
             )
 
-            # Session 2
-            session2 = project / "session2.jsonl"
-            session2.write_text(
-                '{"type": "user", "timestamp": "2025-01-02T10:00:00.000Z", "message": {"role": "user", "content": "Hello from session 2"}}\n'
-            )
+        with patch(
+            "claude_code_transcripts.html_generation.generator.generate_html",
+            side_effect=mock_generate_html,
+        ):
+            stats = generate_batch_html(projects, output_dir)
 
-            # Patch generate_html to fail on one specific session
-            original_generate_html = __import__("claude_code_transcripts").generate_html
-
-            def mock_generate_html(json_path, output_dir, github_repo=None):
-                if "session1" in str(json_path):
-                    raise RuntimeError("Simulated failure")
-                return original_generate_html(json_path, output_dir, github_repo)
-
-            with patch(
-                "claude_code_transcripts.generate_html", side_effect=mock_generate_html
-            ):
-                stats = generate_batch_html(projects_dir, output_dir)
-
-            # Should have processed session2 successfully
-            assert stats["total_sessions"] == 1
-            # Should have recorded session1 as failed
-            assert len(stats["failed_sessions"]) == 1
-            assert "session1" in stats["failed_sessions"][0]["session"]
-            assert "Simulated failure" in stats["failed_sessions"][0]["error"]
+        # Should have processed session2 successfully
+        assert stats["total_sessions"] == 1
+        # Should have recorded session1 as failed
+        assert len(stats["failed_sessions"]) == 1
+        assert "session1" in stats["failed_sessions"][0]["session"]
+        assert "Simulated failure" in stats["failed_sessions"][0]["error"]
 
 
 class TestAllCommand:
@@ -414,6 +468,149 @@ class TestAllCommand:
         # Should not create any files
         assert not (output_dir / "index.html").exists()
 
+    def test_all_processes_cowork_sessions(self, tmp_path):
+        """Cowork sessions are discovered, parsed, and written to a Cowork project dir."""
+        jsonl_file = tmp_path / "cowork-session.jsonl"
+        jsonl_file.write_text(
+            '{"type":"user","timestamp":"2025-01-01T10:00:00.000Z","message":{"role":"user","content":"Hello cowork"}}\n'
+            '{"type":"assistant","timestamp":"2025-01-01T10:00:05.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Hi!"}]}}\n'
+        )
+        cowork_session = {
+            "title": "Cowork Test Session",
+            "jsonl_path": jsonl_file,
+            "folders": ["/test"],
+            "mtime": 1700000000.0,
+        }
+        output_dir = tmp_path / "output"
+
+        runner = CliRunner()
+        with patch(
+            "claude_code_transcripts.commands.find_cowork_sessions"
+        ) as mock_cowork:
+            mock_cowork.return_value = [cowork_session]
+            result = runner.invoke(
+                cli,
+                ["all", "--source", "cowork", "--output", str(output_dir)],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert (output_dir / "Cowork").is_dir()
+        assert (output_dir / "Cowork" / "cowork-session" / "index.html").exists()
+
+    def test_all_include_json_copies_jsonl_files(self, mock_projects_dir, output_dir):
+        """Test --json flag copies source JSONL files into each session directory."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "all",
+                "--source",
+                str(mock_projects_dir),
+                "--output",
+                str(output_dir),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Each session directory should contain a copy of its source JSONL
+        assert (output_dir / "project-a" / "abc123" / "abc123.jsonl").exists()
+        assert (output_dir / "project-a" / "def456" / "def456.jsonl").exists()
+        assert (output_dir / "project-b" / "ghi789" / "ghi789.jsonl").exists()
+
+    def test_all_without_json_does_not_copy_jsonl_files(
+        self, mock_projects_dir, output_dir
+    ):
+        """Test that JSONL files are not copied when --json is not specified."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "all",
+                "--source",
+                str(mock_projects_dir),
+                "--output",
+                str(output_dir),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert not (output_dir / "project-a" / "abc123" / "abc123.jsonl").exists()
+        assert not (output_dir / "project-b" / "ghi789" / "ghi789.jsonl").exists()
+
+
+class TestAllSourceFlag:
+    """Tests for the --source flag behavior in the all command."""
+
+    def test_source_code_skips_cowork(self, mock_projects_dir):
+        """--source code queries Code sessions and never calls find_cowork_sessions."""
+        runner = CliRunner()
+        with (
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
+            patch(
+                "claude_code_transcripts.commands.find_cowork_sessions"
+            ) as mock_cowork,
+        ):
+            mock_all.return_value = []
+            result = runner.invoke(cli, ["all", "--source", "code"])
+
+        assert result.exit_code == 0
+        mock_all.assert_called_once()
+        mock_cowork.assert_not_called()
+
+    def test_source_cowork_skips_code(self):
+        """--source cowork queries Cowork sessions and never calls find_all_sessions."""
+        runner = CliRunner()
+        with (
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
+            patch(
+                "claude_code_transcripts.commands.find_cowork_sessions"
+            ) as mock_cowork,
+        ):
+            mock_cowork.return_value = []
+            result = runner.invoke(cli, ["all", "--source", "cowork"])
+
+        assert result.exit_code == 0
+        mock_all.assert_not_called()
+        mock_cowork.assert_called_once()
+
+    def test_source_path_uses_that_path_and_skips_cowork(self, mock_projects_dir):
+        """--source <path> searches Code at that path and never calls find_cowork_sessions."""
+        runner = CliRunner()
+        with (
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
+            patch(
+                "claude_code_transcripts.commands.find_cowork_sessions"
+            ) as mock_cowork,
+        ):
+            mock_all.return_value = []
+            result = runner.invoke(cli, ["all", "--source", str(mock_projects_dir)])
+
+        assert result.exit_code == 0
+        mock_all.assert_called_once_with(mock_projects_dir, include_agents=False)
+        mock_cowork.assert_not_called()
+
+    def test_no_source_searches_both(self, tmp_path, monkeypatch):
+        """No --source calls both find_all_sessions and find_cowork_sessions."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        projects_dir.mkdir(parents=True)
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        runner = CliRunner()
+        with (
+            patch("claude_code_transcripts.commands.find_all_sessions") as mock_all,
+            patch(
+                "claude_code_transcripts.commands.find_cowork_sessions"
+            ) as mock_cowork,
+        ):
+            mock_all.return_value = []
+            mock_cowork.return_value = []
+            result = runner.invoke(cli, ["all"])
+
+        assert result.exit_code == 0
+        mock_all.assert_called_once()
+        mock_cowork.assert_called_once()
+
 
 class TestJsonCommandWithUrl:
     """Tests for the json command with URL support."""
@@ -435,7 +632,8 @@ class TestJsonCommandWithUrl:
 
         runner = CliRunner()
         with patch(
-            "claude_code_transcripts.httpx.get", return_value=mock_response
+            "claude_code_transcripts.commands.file.httpx.get",
+            return_value=mock_response,
         ) as mock_get:
             result = runner.invoke(
                 cli,
@@ -468,7 +666,8 @@ class TestJsonCommandWithUrl:
 
         runner = CliRunner()
         with patch(
-            "claude_code_transcripts.httpx.get", return_value=mock_response
+            "claude_code_transcripts.commands.file.httpx.get",
+            return_value=mock_response,
         ) as mock_get:
             result = runner.invoke(
                 cli,
@@ -490,7 +689,7 @@ class TestJsonCommandWithUrl:
 
         runner = CliRunner()
         with patch(
-            "claude_code_transcripts.httpx.get",
+            "claude_code_transcripts.commands.file.httpx.get",
             side_effect=httpx.RequestError("Network error"),
         ):
             result = runner.invoke(
@@ -537,7 +736,9 @@ class TestWebCommandRepoFiltering:
 
     def test_detect_github_repo_from_session(self):
         """Test that detect_github_repo extracts repo from session loglines."""
-        from claude_code_transcripts import detect_github_repo
+        from claude_code_transcripts.html_generation.generator import (
+            _detect_github_repo as detect_github_repo,
+        )
 
         loglines = [
             {
@@ -558,7 +759,9 @@ class TestWebCommandRepoFiltering:
 
     def test_detect_github_repo_returns_none_when_not_found(self):
         """Test that detect_github_repo returns None when no repo found."""
-        from claude_code_transcripts import detect_github_repo
+        from claude_code_transcripts.html_generation.generator import (
+            _detect_github_repo as detect_github_repo,
+        )
 
         loglines = [
             {
@@ -571,7 +774,7 @@ class TestWebCommandRepoFiltering:
 
     def test_enrich_sessions_with_repos(self):
         """Test enriching sessions with repo information from session metadata."""
-        from claude_code_transcripts import enrich_sessions_with_repos
+        from claude_code_transcripts.api import enrich_sessions_with_repos
 
         # Mock sessions from the API list with session_context
         sessions = [
@@ -603,7 +806,7 @@ class TestWebCommandRepoFiltering:
 
     def test_extract_repo_from_session_outcomes(self):
         """Test extracting repo from session_context.outcomes."""
-        from claude_code_transcripts import extract_repo_from_session
+        from claude_code_transcripts.api import extract_repo_from_session
 
         session = {
             "session_context": {
@@ -619,7 +822,7 @@ class TestWebCommandRepoFiltering:
 
     def test_extract_repo_from_session_sources_url(self):
         """Test extracting repo from session_context.sources URL."""
-        from claude_code_transcripts import extract_repo_from_session
+        from claude_code_transcripts.api import extract_repo_from_session
 
         session = {
             "session_context": {
@@ -635,14 +838,14 @@ class TestWebCommandRepoFiltering:
 
     def test_extract_repo_from_session_no_context(self):
         """Test extracting repo when no session_context exists."""
-        from claude_code_transcripts import extract_repo_from_session
+        from claude_code_transcripts.api import extract_repo_from_session
 
         session = {"id": "sess1", "title": "No context"}
         assert extract_repo_from_session(session) is None
 
     def test_filter_sessions_by_repo(self):
         """Test filtering sessions by repo."""
-        from claude_code_transcripts import filter_sessions_by_repo
+        from claude_code_transcripts.api import filter_sessions_by_repo
 
         sessions = [
             {"id": "sess1", "title": "Session 1", "repo": "simonw/datasette"},
@@ -656,7 +859,7 @@ class TestWebCommandRepoFiltering:
 
     def test_filter_sessions_by_repo_none_returns_all(self):
         """Test that filtering with None repo returns all sessions."""
-        from claude_code_transcripts import filter_sessions_by_repo
+        from claude_code_transcripts.api import filter_sessions_by_repo
 
         sessions = [
             {"id": "sess1", "title": "Session 1", "repo": "simonw/datasette"},
@@ -668,7 +871,7 @@ class TestWebCommandRepoFiltering:
 
     def test_format_session_for_display_with_repo(self):
         """Test formatting session display with repo first."""
-        from claude_code_transcripts import format_session_for_display
+        from claude_code_transcripts.commands.web import format_session_for_display
 
         session = {
             "id": "sess1",
@@ -685,7 +888,7 @@ class TestWebCommandRepoFiltering:
 
     def test_format_session_for_display_without_repo(self):
         """Test formatting session display without repo."""
-        from claude_code_transcripts import format_session_for_display
+        from claude_code_transcripts.commands.web import format_session_for_display
 
         session = {
             "id": "sess1",
