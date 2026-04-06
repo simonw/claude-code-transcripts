@@ -270,7 +270,8 @@ def find_all_sessions(folder, include_agents=False):
             continue
 
         # Get project folder
-        project_folder = session_file.parent
+        relative_path = session_file.relative_to(folder)
+        project_folder = folder / relative_path.parts[0]
         project_key = project_folder.name
 
         if project_key not in projects:
