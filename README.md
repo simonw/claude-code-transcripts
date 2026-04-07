@@ -11,10 +11,6 @@ Convert Claude Code session files (JSON or JSONL) to clean, mobile-friendly HTML
 
 Read [A new way to extract detailed transcripts from Claude Code](https://simonwillison.net/2025/Dec/25/claude-code-transcripts/) for background on this project.
 
-> [!WARNING]
->
-> The `web` commands for both listing Claude Code for web sessions and converting those to a transcript are both broken right now due to changes to the unofficial and undocumented APIs that these commands were using. See [issue #77](https://github.com/simonw/claude-code-transcripts/issues/77) for details.
-
 ## Installation
 
 Install this tool using `uv`:

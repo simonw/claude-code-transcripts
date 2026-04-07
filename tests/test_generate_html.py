@@ -58,6 +58,24 @@ def output_dir():
         yield Path(tmpdir)
 
 
+def _make_teleport_events_response(session_data):
+    """Convert a session_data dict (with 'loglines') to teleport-events API response format."""
+    loglines = session_data.get("loglines", [])
+    return {
+        "data": [
+            {
+                "event_id": f"evt_{i}",
+                "event_type": entry.get("type", "unknown"),
+                "is_compaction": False,
+                "payload": entry,
+                "created_at": entry.get("timestamp", ""),
+            }
+            for i, entry in enumerate(loglines)
+        ],
+        "next_cursor": None,
+    }
+
+
 class TestGenerateHtml:
     """Tests for the main generate_html function."""
 
@@ -889,8 +907,8 @@ class TestImportJsonOption:
             session_data = json.load(f)
 
         httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
-            json=session_data,
+            url="https://api.anthropic.com/v1/code/sessions/test-session-id/teleport-events?limit=1000",
+            json=_make_teleport_events_response(session_data),
         )
 
         runner = CliRunner()
@@ -918,7 +936,7 @@ class TestImportJsonOption:
         # Verify JSON content is valid
         with open(json_file) as f:
             saved_data = json.load(f)
-        assert saved_data == session_data
+        assert saved_data == {"loglines": session_data["loglines"]}
 
 
 class TestImportGistOption:
@@ -936,8 +954,8 @@ class TestImportGistOption:
             session_data = json.load(f)
 
         httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
-            json=session_data,
+            url="https://api.anthropic.com/v1/code/sessions/test-session-id/teleport-events?limit=1000",
+            json=_make_teleport_events_response(session_data),
         )
 
         # Mock subprocess.run for gh gist create
@@ -1049,8 +1067,8 @@ class TestOpenOption:
             session_data = json.load(f)
 
         httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/session_ingress/session/test-session-id",
-            json=session_data,
+            url="https://api.anthropic.com/v1/code/sessions/test-session-id/teleport-events?limit=1000",
+            json=_make_teleport_events_response(session_data),
         )
 
         # Track webbrowser.open calls
@@ -1512,8 +1530,8 @@ class TestOutputAutoOption:
             session_data = json.load(f)
 
         httpx_mock.add_response(
-            url="https://api.anthropic.com/v1/session_ingress/session/my-web-session-id",
-            json=session_data,
+            url="https://api.anthropic.com/v1/code/sessions/my-web-session-id/teleport-events?limit=1000",
+            json=_make_teleport_events_response(session_data),
         )
 
         runner = CliRunner()
