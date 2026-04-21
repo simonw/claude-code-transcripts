@@ -1344,9 +1344,12 @@ class TestFindLocalSessionsFilters:
             )
             time.sleep(0.01)
 
-        # Only match is the oldest file; cap of 2 excludes it.
+        # Only match is the oldest file; cap of 2 (with limit=2) excludes it.
         capped = find_local_sessions(
-            tmp_path / ".claude" / "projects", query="needle", search_limit=2
+            tmp_path / ".claude" / "projects",
+            query="needle",
+            limit=2,
+            search_limit=2,
         )
         assert capped == []
         # Unlimited (0) finds it.

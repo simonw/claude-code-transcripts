@@ -235,12 +235,15 @@ def find_local_sessions(
             continue
         candidates.append(f)
 
-    # Sort by modification time, most recent first, then cap the scan set
+    # Sort by modification time, most recent first
     candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-    if search_limit:
-        candidates = candidates[:search_limit]
 
     query_lower = query.lower() if query else None
+
+    # search_limit only applies when filtering, and is widened if --limit is
+    # larger so it never silently caps the requested result count.
+    if (cwd_filter or query_lower is not None) and search_limit:
+        candidates = candidates[: max(search_limit, limit)]
 
     results = []
     for f in candidates:
@@ -1617,7 +1620,7 @@ def cli():
 @click.option(
     "--search-limit",
     default=500,
-    help="Maximum number of most-recent sessions to scan when filtering (default: 500, 0 = unlimited).",
+    help="Soft cap on how many most-recent sessions to scan when filtering; raised automatically if --limit is larger (default: 500, 0 = unlimited).",
 )
 def local_cmd(
     output,
