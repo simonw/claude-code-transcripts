@@ -76,6 +76,31 @@ Use `--limit` to control how many sessions are shown (default: 10):
 claude-code-transcripts local --limit 20
 ```
 
+Filter sessions by the working directory Claude Code was run in, or by text in any user prompt:
+
+```bash
+# Only sessions whose cwd contains "my-project"
+claude-code-transcripts local --cwd my-project
+
+# Only sessions from the current directory
+claude-code-transcripts local --cwd-here
+
+# Only sessions containing this text in any user prompt (case-insensitive)
+claude-code-transcripts local --query "authentication middleware"
+
+# Combine: sessions in this directory that discussed authentication
+claude-code-transcripts local --cwd-here --query authentication
+```
+
+When `--query` matches, the picker shows the matched prompt text instead of the session summary.
+
+Filtering scans up to the 500 most recent sessions by default. Raise or disable with `--search-limit`:
+
+```bash
+claude-code-transcripts local --query foo --search-limit 2000
+claude-code-transcripts local --query foo --search-limit 0  # no cap
+```
+
 ### Web sessions
 
 Import sessions directly from the Claude API:
