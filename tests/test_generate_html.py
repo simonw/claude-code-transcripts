@@ -1280,6 +1280,97 @@ class TestFindLocalSessions:
         assert len(results) == 3
 
 
+class TestFindLocalSessionsFilters:
+    """Tests for --cwd, --query, and --search-limit filtering."""
+
+    @staticmethod
+    def _write_session(path, summary, user_text, cwd=None):
+        import json as _json
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        user_line = {
+            "type": "user",
+            "timestamp": "2025-01-01T00:00:00Z",
+            "message": {"role": "user", "content": user_text},
+        }
+        if cwd is not None:
+            user_line["cwd"] = cwd
+        path.write_text(
+            f'{{"type":"summary","summary":"{summary}"}}\n'
+            + _json.dumps(user_line)
+            + "\n"
+        )
+
+    def test_cwd_filter_matches_cwd_field_as_substring(self, tmp_path):
+        """--cwd substring-matches the cwd field recorded in user messages."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        self._write_session(
+            projects_dir / "a" / "s1.jsonl", "A", "hi", cwd="/x/my-project"
+        )
+        self._write_session(projects_dir / "b" / "s2.jsonl", "B", "hi", cwd="/x/other")
+
+        results = find_local_sessions(projects_dir, cwd_filter="my-project")
+        assert [r[1] for r in results] == ["A"]
+
+    def test_query_matches_user_prompt_and_returns_snippet(self, tmp_path):
+        """--query substring-matches user prompts (case-insensitive) and returns the matched text."""
+        projects_dir = tmp_path / ".claude" / "projects"
+        self._write_session(
+            projects_dir / "a" / "s1.jsonl",
+            "A",
+            "Refactor the Authentication middleware",
+        )
+        self._write_session(projects_dir / "b" / "s2.jsonl", "B", "Add pagination")
+        # Summary text alone must not match; only user prompts do.
+        self._write_session(
+            projects_dir / "c" / "s3.jsonl", "authentication cleanup", "Unrelated"
+        )
+
+        results = find_local_sessions(projects_dir, query="authentication")
+        assert len(results) == 1
+        assert results[0][1] == "A"
+        assert "Authentication" in results[0][2]
+
+    def test_search_limit_caps_files_scanned(self, tmp_path):
+        """--search-limit caps how many most-recent files are scanned before filtering."""
+        import time
+
+        projects_dir = tmp_path / ".claude" / "projects" / "proj"
+        for i in range(5):
+            self._write_session(
+                projects_dir / f"s{i}.jsonl",
+                f"Session {i}",
+                "needle" if i == 0 else f"other {i}",
+            )
+            time.sleep(0.01)
+
+        # Only match is the oldest file; cap of 2 excludes it.
+        capped = find_local_sessions(
+            tmp_path / ".claude" / "projects", query="needle", search_limit=2
+        )
+        assert capped == []
+        # Unlimited (0) finds it.
+        unbounded = find_local_sessions(
+            tmp_path / ".claude" / "projects", query="needle", search_limit=0
+        )
+        assert len(unbounded) == 1
+
+    def test_limit_applied_after_filters(self, tmp_path):
+        """--limit bounds filtered results, not the pre-filter scan set."""
+        projects_dir = tmp_path / ".claude" / "projects" / "proj"
+        for i in range(6):
+            self._write_session(
+                projects_dir / f"s{i}.jsonl",
+                f"S{i}",
+                "needle" if i % 2 == 0 else "other",
+            )
+
+        results = find_local_sessions(
+            tmp_path / ".claude" / "projects", query="needle", limit=3
+        )
+        assert len(results) == 3
+
+
 class TestLocalSessionCLI:
     """Tests for CLI behavior with local sessions."""
 
@@ -1388,6 +1479,54 @@ class TestLocalSessionCLI:
 
         assert result.exit_code == 0
         assert "No session selected" in result.output
+
+    def test_local_cwd_here_and_query_filter_picker(self, tmp_path, monkeypatch):
+        """--cwd-here filters by current dir and --query surfaces matched prompt in the picker."""
+        from click.testing import CliRunner
+        from claude_code_transcripts import cli
+        import questionary
+
+        projects_dir = tmp_path / ".claude" / "projects" / "proj"
+        projects_dir.mkdir(parents=True)
+
+        here = tmp_path / "my-project"
+        here.mkdir()
+
+        match_file = projects_dir / "match.jsonl"
+        match_file.write_text(
+            '{"type":"summary","summary":"Here"}\n'
+            f'{{"type":"user","timestamp":"2025-01-01T00:00:00Z","cwd":"{here.resolve()}","message":{{"role":"user","content":"Refactor the authentication middleware"}}}}\n'
+        )
+        other_file = projects_dir / "other.jsonl"
+        other_file.write_text(
+            '{"type":"summary","summary":"Elsewhere"}\n'
+            '{"type":"user","timestamp":"2025-01-01T00:00:00Z","cwd":"/somewhere/else","message":{"role":"user","content":"Refactor the authentication middleware"}}\n'
+        )
+
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.chdir(here)
+
+        captured = {}
+
+        class MockSelect:
+            def __init__(self, *args, **kwargs):
+                captured["choices"] = kwargs.get("choices", [])
+
+            def ask(self):
+                return None
+
+        monkeypatch.setattr(questionary, "select", MockSelect)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["local", "--cwd-here", "--query", "authentication"]
+        )
+
+        assert result.exit_code == 0
+        assert len(captured["choices"]) == 1
+        assert captured["choices"][0].value == match_file
+        # Matched prompt is shown in the picker row, not the summary.
+        assert "authentication" in captured["choices"][0].title.lower()
 
 
 class TestOutputAutoOption:

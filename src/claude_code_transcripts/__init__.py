@@ -7,6 +7,7 @@ import platform
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import webbrowser
 from datetime import datetime
@@ -158,29 +159,112 @@ def _get_jsonl_summary(filepath, max_length=200):
     return "(no summary)"
 
 
-def find_local_sessions(folder, limit=10):
+def _find_session_cwd(filepath):
+    """Return the cwd field from the first user message that has one, or None."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") == "user" and "cwd" in obj:
+                    return obj.get("cwd")
+    except Exception:
+        pass
+    return None
+
+
+def _find_user_prompt_match(filepath, query_lower):
+    """Scan user prompts for a case-insensitive substring match.
+
+    Returns the full matched prompt text, or None if no match.
+    """
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if obj.get("type") != "user" or obj.get("isMeta"):
+                    continue
+                content = obj.get("message", {}).get("content", "")
+                text = extract_text_from_content(content)
+                if text and query_lower in text.lower():
+                    return text
+    except Exception:
+        pass
+    return None
+
+
+def find_local_sessions(
+    folder, limit=10, cwd_filter=None, query=None, search_limit=None
+):
     """Find recent JSONL session files in the given folder.
 
-    Returns a list of (Path, summary) tuples sorted by modification time.
+    Returns a list of (Path, summary, match_snippet) tuples sorted by
+    modification time. match_snippet is the matched user prompt text when
+    ``query`` is set and matched, otherwise None.
+
     Excludes agent files and warmup/empty sessions.
+
+    Args:
+        folder: Path to the Claude projects folder.
+        limit: Maximum number of results to return after filtering.
+        cwd_filter: If set, only include sessions whose cwd field contains
+            this substring.
+        query: If set, only include sessions containing this substring
+            (case-insensitive) in any user prompt.
+        search_limit: If set and > 0, cap the number of most-recent files
+            scanned before applying filters. 0 or None means unlimited.
     """
     folder = Path(folder)
     if not folder.exists():
         return []
 
-    results = []
+    candidates = []
     for f in folder.glob("**/*.jsonl"):
         if f.name.startswith("agent-"):
             continue
+        candidates.append(f)
+
+    # Sort by modification time, most recent first, then cap the scan set
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    if search_limit:
+        candidates = candidates[:search_limit]
+
+    query_lower = query.lower() if query else None
+
+    results = []
+    for f in candidates:
         summary = get_session_summary(f)
         # Skip boring/empty sessions
         if summary.lower() == "warmup" or summary == "(no summary)":
             continue
-        results.append((f, summary))
 
-    # Sort by modification time, most recent first
-    results.sort(key=lambda x: x[0].stat().st_mtime, reverse=True)
-    return results[:limit]
+        if cwd_filter:
+            session_cwd = _find_session_cwd(f)
+            if not session_cwd or cwd_filter not in session_cwd:
+                continue
+
+        match_snippet = None
+        if query_lower is not None:
+            match_snippet = _find_user_prompt_match(f, query_lower)
+            if match_snippet is None:
+                continue
+
+        results.append((f, summary, match_snippet))
+        if len(results) >= limit:
+            break
+
+    return results
 
 
 def get_project_display_name(folder_name):
@@ -1516,7 +1600,38 @@ def cli():
     default=10,
     help="Maximum number of sessions to show (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+@click.option(
+    "--cwd",
+    "cwd_filter",
+    help="Only include sessions whose working directory matches (substring of the cwd recorded in the session).",
+)
+@click.option(
+    "--cwd-here",
+    is_flag=True,
+    help="Shortcut for --cwd with the current working directory.",
+)
+@click.option(
+    "--query",
+    help="Only include sessions containing this text in any user prompt (case-insensitive substring).",
+)
+@click.option(
+    "--search-limit",
+    default=500,
+    help="Maximum number of most-recent sessions to scan when filtering (default: 500, 0 = unlimited).",
+)
+def local_cmd(
+    output,
+    output_auto,
+    repo,
+    gist,
+    include_json,
+    open_browser,
+    limit,
+    cwd_filter,
+    cwd_here,
+    query,
+    search_limit,
+):
     """Select and convert a local Claude Code session to HTML."""
     projects_folder = Path.home() / ".claude" / "projects"
 
@@ -1525,24 +1640,40 @@ def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit
         click.echo("No local Claude Code sessions available.")
         return
 
+    if cwd_here:
+        if cwd_filter:
+            click.echo("Error: --cwd and --cwd-here cannot be used together.", err=True)
+            sys.exit(1)
+        cwd_filter = str(Path.cwd().resolve())
+
     click.echo("Loading local sessions...")
-    results = find_local_sessions(projects_folder, limit=limit)
+    results = find_local_sessions(
+        projects_folder,
+        limit=limit,
+        cwd_filter=cwd_filter,
+        query=query,
+        search_limit=search_limit,
+    )
 
     if not results:
-        click.echo("No local sessions found.")
+        if cwd_filter or query:
+            click.echo("No sessions matched the given filters.")
+        else:
+            click.echo("No local sessions found.")
         return
 
     # Build choices for questionary
     choices = []
-    for filepath, summary in results:
+    for filepath, summary, match_snippet in results:
         stat = filepath.stat()
         mod_time = datetime.fromtimestamp(stat.st_mtime)
         size_kb = stat.st_size / 1024
         date_str = mod_time.strftime("%Y-%m-%d %H:%M")
-        # Truncate summary if too long
-        if len(summary) > 50:
-            summary = summary[:47] + "..."
-        display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
+        # When a query matched, show the matched prompt instead of the summary
+        display_text = match_snippet if match_snippet else summary
+        if len(display_text) > 50:
+            display_text = display_text[:47] + "..."
+        display = f"{date_str}  {size_kb:5.0f} KB  {display_text}"
         choices.append(questionary.Choice(title=display, value=filepath))
 
     selected = questionary.select(
