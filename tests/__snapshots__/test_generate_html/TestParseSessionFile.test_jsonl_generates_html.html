@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Claude Code transcript - Index</title>
+    <title>Claude Code transcript</title>
     <style>
 :root { --bg-color: #f5f5f5; --card-bg: #ffffff; --user-bg: #e3f2fd; --user-border: #1976d2; --assistant-bg: #f5f5f5; --assistant-border: #9e9e9e; --thinking-bg: #fff8e1; --thinking-border: #ffc107; --thinking-text: #666; --tool-bg: #f3e5f5; --tool-border: #9c27b0; --tool-result-bg: #e8f5e9; --tool-error-bg: #ffebee; --text-color: #212121; --text-muted: #757575; --code-bg: #263238; --code-text: #aed581; }
 * { box-sizing: border-box; }
@@ -38,6 +38,30 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.agent-graph { border: 1px solid #7e57c2; border-radius: 10px; margin: 0 0 24px; background: #faf8fe; }
+.agent-graph-summary { cursor: pointer; padding: 12px 14px; font-weight: 600; color: #4527a0; }
+.graph-body { padding: 8px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.graph-fan { display: grid; grid-template-columns: 120px auto 1fr; align-items: center; gap: 12px; position: relative; padding: 8px 0; }
+.graph-fan + .graph-fan { border-top: 1px dashed #d1c4e9; }
+.graph-main-node { background: #4527a0; color: #fff; text-align: center; padding: 8px 10px; border-radius: 8px; font-weight: 600; font-size: 0.8rem; }
+.graph-count { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+.graph-count::before { content: "→ "; color: #7e57c2; font-weight: 700; }
+.graph-branches { display: flex; flex-wrap: wrap; gap: 8px; }
+.graph-sub { display: flex; flex-direction: column; gap: 2px; text-decoration: none; background: #fff; border: 1px solid #b39ddb; border-left: 4px solid #7e57c2; border-radius: 8px; padding: 6px 10px; min-width: 0; transition: background 0.12s, transform 0.12s; }
+.graph-sub:hover { background: #ede7f6; transform: translateY(-1px); }
+.graph-sub-title { font-size: 0.82rem; font-weight: 600; color: #4527a0; }
+.graph-sub-meta { font-size: 0.72rem; color: var(--text-muted); }
+@media (max-width: 920px) { .graph-fan { grid-template-columns: 1fr; gap: 6px; } }
+.sp-layout { display: grid; grid-template-columns: 250px minmax(0, 820px); gap: 28px; max-width: 1120px; margin: 0 auto; align-items: start; }
+.transcript-nav { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; font-size: 0.85rem; padding: 8px; background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.nav-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.7rem; color: var(--text-muted); padding: 4px 10px 8px; }
+.transcript-nav a { display: block; padding: 6px 10px; color: var(--text-muted); text-decoration: none; border-left: 3px solid transparent; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.transcript-nav a:hover { background: rgba(0,0,0,0.04); color: var(--text-color); }
+.transcript-nav a.active { color: var(--user-border); border-left-color: var(--user-border); background: var(--user-bg); font-weight: 600; }
+.nav-num { color: var(--user-border); font-weight: 600; }
+.transcript-main { min-width: 0; }
+.sp-stats { color: var(--text-muted); margin-bottom: 20px; }
+@media (max-width: 920px) { .sp-layout { grid-template-columns: 1fr; gap: 12px; } .transcript-nav { position: static; max-height: 240px; order: -1; } }
 .subagent { border: 2px solid #7e57c2; border-radius: 8px; margin: 14px 0; background: #f3eefb; overflow: hidden; }
 .subagent > .subagent-summary { cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; background: linear-gradient(135deg, #ede7f6 0%, #f3eefb 100%); }
 .subagent > .subagent-summary:hover { background: #e1d5f5; }
@@ -156,54 +180,131 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
 </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header-row">
-            <h1>Claude Code transcript</h1>
-            <div id="search-box">
-                <input type="text" id="search-input" placeholder="Search..." aria-label="Search transcripts">
-                <button id="search-btn" type="button" aria-label="Search">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
-                </button>
+    <div class="sp-layout">
+        <nav class="transcript-nav" aria-label="Prompt timeline">
+            <div class="nav-title">Prompts</div>
+            
+<a href="#msg-2025-12-24T10-00-00-000Z" data-target="msg-2025-12-24T10-00-00-000Z"><span class="nav-num">#1</span> Create a hello world function</a>
+<a href="#msg-2025-12-24T10-01-00-000Z" data-target="msg-2025-12-24T10-01-00-000Z"><span class="nav-num">#2</span> Now add a goodbye function</a>
+        </nav>
+        <main class="transcript-main">
+            <div class="header-row">
+                <h1>Claude Code transcript</h1>
+                <div id="search-box">
+                    <input type="text" id="search-input" placeholder="Search..." aria-label="Search transcripts">
+                    <button id="search-btn" type="button" aria-label="Search">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                    </button>
+                </div>
             </div>
+            <p class="sp-stats">2 prompts · 7 messages · 2 tool calls · 1 commits</p>
+            
+            <section class="conv" id="sec-msg-2025-12-24T10-00-00-000Z" data-nav="msg-2025-12-24T10-00-00-000Z">
+<div class="message user" id="msg-2025-12-24T10-00-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-00-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:00.000Z" data-timestamp="2025-12-24T10:00:00.000Z">2025-12-24T10:00:00.000Z</time></a></div><div class="message-content">
+<div class="user-content"><p>Create a hello world function</p></div></div></div>
+<div class="message assistant" id="msg-2025-12-24T10-00-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-00-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:05.000Z" data-timestamp="2025-12-24T10:00:05.000Z">2025-12-24T10:00:05.000Z</time></a></div><div class="message-content">
+<div class="assistant-text"><p>I'll create that function for you.</p></div><div class="file-tool write-tool" data-tool-id="toolu_001">
+<div class="file-tool-header write-header"><span class="file-tool-icon">📝</span> Write <span class="file-tool-path">hello.py</span></div>
+<div class="file-tool-fullpath">/project/hello.py</div>
+<div class="truncatable"><div class="truncatable-content"><pre class="file-content">def hello():
+    return &#39;Hello, World!&#39;
+</pre></div><button class="expand-btn">Show more</button></div>
+</div></div></div>
+<div class="message tool-reply" id="msg-2025-12-24T10-00-10-000Z"><div class="message-header"><span class="role-label">Tool reply</span><a href="#msg-2025-12-24T10-00-10-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:10.000Z" data-timestamp="2025-12-24T10:00:10.000Z">2025-12-24T10:00:10.000Z</time></a></div><div class="message-content"><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><pre>File written successfully</pre></div><button class="expand-btn">Show more</button></div></div></div></div>
+<div class="message assistant" id="msg-2025-12-24T10-00-15-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-00-15-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:15.000Z" data-timestamp="2025-12-24T10:00:15.000Z">2025-12-24T10:00:15.000Z</time></a></div><div class="message-content">
+<div class="tool-use bash-tool" data-tool-id="toolu_002">
+<div class="tool-header"><span class="tool-icon">$</span> Bash</div>
+<div class="tool-description">Commit changes</div><div class="truncatable"><div class="truncatable-content"><pre class="bash-command">git add . &amp;&amp; git commit -m &#39;Add hello function&#39;</pre></div><button class="expand-btn">Show more</button></div>
+</div></div></div>
+<div class="message tool-reply" id="msg-2025-12-24T10-00-20-000Z"><div class="message-header"><span class="role-label">Tool reply</span><a href="#msg-2025-12-24T10-00-20-000Z" class="timestamp-link"><time datetime="2025-12-24T10:00:20.000Z" data-timestamp="2025-12-24T10:00:20.000Z">2025-12-24T10:00:20.000Z</time></a></div><div class="message-content"><div class="tool-result"><div class="truncatable"><div class="truncatable-content"><div class="commit-card"><span class="commit-card-hash">abc1234</span> Add hello function</div><pre>1 file changed</pre></div><button class="expand-btn">Show more</button></div></div></div></div></section><section class="conv" id="sec-msg-2025-12-24T10-01-00-000Z" data-nav="msg-2025-12-24T10-01-00-000Z">
+<div class="message user" id="msg-2025-12-24T10-01-00-000Z"><div class="message-header"><span class="role-label">User</span><a href="#msg-2025-12-24T10-01-00-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:00.000Z" data-timestamp="2025-12-24T10:01:00.000Z">2025-12-24T10:01:00.000Z</time></a></div><div class="message-content">
+<div class="user-content"><p>Now add a goodbye function</p></div></div></div>
+<div class="message assistant" id="msg-2025-12-24T10-01-05-000Z"><div class="message-header"><span class="role-label">Assistant</span><a href="#msg-2025-12-24T10-01-05-000Z" class="timestamp-link"><time datetime="2025-12-24T10:01:05.000Z" data-timestamp="2025-12-24T10:01:05.000Z">2025-12-24T10:01:05.000Z</time></a></div><div class="message-content">
+<div class="assistant-text"><p>Done! The hello function is ready.</p></div></div></div></section>
+        </main>
+    </div>
+
+    <dialog id="search-modal">
+        <div class="search-modal-header">
+            <input type="text" id="modal-search-input" placeholder="Search..." aria-label="Search transcripts">
+            <button id="modal-search-btn" type="button" aria-label="Search">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+            </button>
+            <button id="modal-close-btn" type="button" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
         </div>
-        
+        <div id="search-status"></div>
+        <div id="search-results"></div>
+    </dialog>
+    <script>
+document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
+    const timestamp = el.getAttribute('data-timestamp');
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    if (isToday) { el.textContent = timeStr; }
+    else { el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr; }
+});
+document.querySelectorAll('pre.json').forEach(function(el) {
+    let text = el.textContent;
+    text = text.replace(/"([^"]+)":/g, '<span style="color: #ce93d8">"$1"</span>:');
+    text = text.replace(/: "([^"]*)"/g, ': <span style="color: #81d4fa">"$1"</span>');
+    text = text.replace(/: (\d+)/g, ': <span style="color: #ffcc80">$1</span>');
+    text = text.replace(/: (true|false|null)/g, ': <span style="color: #f48fb1">$1</span>');
+    el.innerHTML = text;
+});
+document.querySelectorAll('.truncatable').forEach(function(wrapper) {
+    const content = wrapper.querySelector('.truncatable-content');
+    const btn = wrapper.querySelector('.expand-btn');
+    if (content.scrollHeight > 250) {
+        wrapper.classList.add('truncated');
+        btn.addEventListener('click', function() {
+            if (wrapper.classList.contains('truncated')) { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
+            else { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
+        });
+    }
+});
 
-<div class="pagination">
-<span class="current">Index</span>
-<span class="disabled">&larr; Prev</span>
-<a href="page-001.html">1</a>
-<a href="page-001.html">Next &rarr;</a>
-</div>
+(function() {
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section.conv[data-nav]'));
+    var navLinks = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.transcript-nav a[data-target]'), function(a) {
+        navLinks[a.getAttribute('data-target')] = a;
+    });
+    if (!sections.length || !Object.keys(navLinks).length) return;
 
-        <p style="color: var(--text-muted); margin-bottom: 24px;">2 prompts · 7 messages · 2 tool calls · 1 commits · 1 pages</p>
-        
-<div class="index-item"><a href="page-001.html#msg-2025-12-24T10-00-00-000Z"><div class="index-item-header"><span class="index-item-number">#1</span><time datetime="2025-12-24T10:00:00.000Z" data-timestamp="2025-12-24T10:00:00.000Z">2025-12-24T10:00:00.000Z</time></div><div class="index-item-content"><p>Create a hello world function</p></div></a><div class="index-item-stats"><span>1 write · 1 bash</span>
-</div></div><div class="index-commit"><div class="index-commit-header"><span class="index-commit-hash">abc1234</span><time datetime="2025-12-24T10:00:20.000Z" data-timestamp="2025-12-24T10:00:20.000Z">2025-12-24T10:00:20.000Z</time></div><div class="index-commit-msg">Add hello function</div></div>
-<div class="index-item"><a href="page-001.html#msg-2025-12-24T10-01-00-000Z"><div class="index-item-header"><span class="index-item-number">#2</span><time datetime="2025-12-24T10:01:00.000Z" data-timestamp="2025-12-24T10:01:00.000Z">2025-12-24T10:01:00.000Z</time></div><div class="index-item-content"><p>Now add a goodbye function</p></div></a></div>
-        
+    var nav = document.querySelector('.transcript-nav');
+    function setActive(id) {
+        Object.keys(navLinks).forEach(function(key) {
+            navLinks[key].classList.toggle('active', key === id);
+        });
+        var active = navLinks[id];
+        if (active && nav && nav.scrollHeight > nav.clientHeight) {
+            var top = active.offsetTop - nav.clientHeight / 2;
+            nav.scrollTo({ top: top, behavior: 'smooth' });
+        }
+    }
 
-<div class="pagination">
-<span class="current">Index</span>
-<span class="disabled">&larr; Prev</span>
-<a href="page-001.html">1</a>
-<a href="page-001.html">Next &rarr;</a>
-</div>
+    var visible = {};
+    var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+            var id = entry.target.getAttribute('data-nav');
+            if (entry.isIntersecting) { visible[id] = entry.intersectionRatio; }
+            else { delete visible[id]; }
+        });
+        // Pick the topmost visible section in document order
+        for (var i = 0; i < sections.length; i++) {
+            var id = sections[i].getAttribute('data-nav');
+            if (visible[id]) { setActive(id); break; }
+        }
+    }, { rootMargin: '-8% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] });
 
-
-        <dialog id="search-modal">
-            <div class="search-modal-header">
-                <input type="text" id="modal-search-input" placeholder="Search..." aria-label="Search transcripts">
-                <button id="modal-search-btn" type="button" aria-label="Search">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
-                </button>
-                <button id="modal-close-btn" type="button" aria-label="Close">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
-                </button>
-            </div>
-            <div id="search-status"></div>
-            <div id="search-results"></div>
-        </dialog>
-        <script>
+    sections.forEach(function(s) { observer.observe(s); });
+})();
+</script>
+    <script>
 (function() {
     var totalPages = 1;
     var searchBox = document.getElementById('search-box');
@@ -482,37 +583,6 @@ details.continuation[open] summary { border-radius: 12px 12px 0 0; margin-bottom
         }
     }
 })();
-        </script>
-    </div>
-    <script>
-document.querySelectorAll('time[data-timestamp]').forEach(function(el) {
-    const timestamp = el.getAttribute('data-timestamp');
-    const date = new Date(timestamp);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const timeStr = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    if (isToday) { el.textContent = timeStr; }
-    else { el.textContent = date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + timeStr; }
-});
-document.querySelectorAll('pre.json').forEach(function(el) {
-    let text = el.textContent;
-    text = text.replace(/"([^"]+)":/g, '<span style="color: #ce93d8">"$1"</span>:');
-    text = text.replace(/: "([^"]*)"/g, ': <span style="color: #81d4fa">"$1"</span>');
-    text = text.replace(/: (\d+)/g, ': <span style="color: #ffcc80">$1</span>');
-    text = text.replace(/: (true|false|null)/g, ': <span style="color: #f48fb1">$1</span>');
-    el.innerHTML = text;
-});
-document.querySelectorAll('.truncatable').forEach(function(wrapper) {
-    const content = wrapper.querySelector('.truncatable-content');
-    const btn = wrapper.querySelector('.expand-btn');
-    if (content.scrollHeight > 250) {
-        wrapper.classList.add('truncated');
-        btn.addEventListener('click', function() {
-            if (wrapper.classList.contains('truncated')) { wrapper.classList.remove('truncated'); wrapper.classList.add('expanded'); btn.textContent = 'Show less'; }
-            else { wrapper.classList.remove('expanded'); wrapper.classList.add('truncated'); btn.textContent = 'Show more'; }
-        });
-    }
-});
-</script>
+    </script>
 </body>
 </html>

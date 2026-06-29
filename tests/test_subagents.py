@@ -54,3 +54,36 @@ def test_generate_html_embeds_subagents_inline(tmp_path):
     # The block announces itself as a transcript with a message count
     assert "Subagent transcript" in html
     assert "4 messages" in html  # agent aaa111 has 4 loglines
+
+
+def test_index_is_single_scrolling_page_with_nav(tmp_path):
+    """index.html holds the full transcript inline with a sticky scroll-nav."""
+    from claude_code_transcripts import generate_html
+
+    out = tmp_path / "out"
+    generate_html(str(FIXTURE), str(out), github_repo=None)
+    index = (out / "index.html").read_text()
+
+    # The full transcript lives on the index page itself (single page)
+    assert "Both repos explored. Done." in index
+    # Subagents are embedded inline on the single page too
+    assert 'class="subagent"' in index
+    # A sticky side nav lists the prompts and links to in-page anchors
+    assert 'class="transcript-nav"' in index
+    assert 'href="#msg-' in index
+    # Scroll-spy wiring is present
+    assert "IntersectionObserver" in index
+
+
+def test_agent_graph_renders_spawn_flow(tmp_path):
+    """A graph at the top links each spawned subagent to its inline block."""
+    from claude_code_transcripts import generate_html
+
+    out = tmp_path / "out"
+    generate_html(str(FIXTURE), str(out), github_repo=None)
+    index = (out / "index.html").read_text()
+
+    assert 'class="agent-graph"' in index
+    # Both subagents appear as nodes that jump to their inline transcript anchors
+    assert 'href="#agent-aaa111"' in index
+    assert 'href="#agent-bbb222"' in index

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Code transcript</title>
+    <style>{{ css|safe }}</style>
+</head>
+<body>
+    <div class="sp-layout">
+        <nav class="transcript-nav" aria-label="Prompt timeline">
+            <div class="nav-title">Prompts</div>
+            {{ nav_items_html|safe }}
+        </nav>
+        <main class="transcript-main">
+            <div class="header-row">
+                <h1>Claude Code transcript</h1>
+                <div id="search-box">
+                    <input type="text" id="search-input" placeholder="Search..." aria-label="Search transcripts">
+                    <button id="search-btn" type="button" aria-label="Search">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+                    </button>
+                </div>
+            </div>
+            <p class="sp-stats">{{ prompt_num }} prompts · {{ total_messages }} messages · {{ total_tool_calls }} tool calls · {{ total_commits }} commits{% if subagent_count %} · {{ subagent_count }} subagents{% endif %}</p>
+            {{ graph_html|safe }}
+            {{ transcript_html|safe }}
+        </main>
+    </div>
+
+    <dialog id="search-modal">
+        <div class="search-modal-header">
+            <input type="text" id="modal-search-input" placeholder="Search..." aria-label="Search transcripts">
+            <button id="modal-search-btn" type="button" aria-label="Search">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
+            </button>
+            <button id="modal-close-btn" type="button" aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+            </button>
+        </div>
+        <div id="search-status"></div>
+        <div id="search-results"></div>
+    </dialog>
+    <script>{{ js|safe }}</script>
+    <script>
+{% include "search.js" %}
+    </script>
+</body>
+</html>

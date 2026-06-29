@@ -57,14 +57,18 @@ All commands support these options:
 - `--json` - include the original session file in the output directory
 
 The generated output includes:
-- `index.html` - an index page with a timeline of prompts and commits
-- `page-001.html`, `page-002.html`, etc. - paginated transcript pages
+- `index.html` - the full transcript as a single scrolling page, with a sticky
+  prompt navigator on the side that highlights your position as you scroll
+- `page-001.html`, `page-002.html`, etc. - paginated transcript pages, kept for
+  deep links and the in-page search (which fetches across them)
 
 When a session spawns subagents (via the `Task`/`Agent` tool), their transcripts
 are stored by Claude Code in `<session-id>/subagents/agent-<id>.jsonl`. These are
 linked back to the spawning tool call and rendered inline as collapsible blocks,
 labelled with the agent type, tool-call count, duration, and token usage — so you
-can follow the flow from the main agent into each subagent and back.
+can follow the flow from the main agent into each subagent and back. An **agent
+flow graph** at the top of the page summarises every spawn point; clicking a node
+jumps to that subagent's inline transcript.
 
 ### Local sessions
 

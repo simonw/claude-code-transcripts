@@ -156,6 +156,16 @@
 <div class="message {{ role_class }}" id="{{ msg_id }}"><div class="message-header"><span class="role-label">{{ role_label }}</span><a href="#{{ msg_id }}" class="timestamp-link"><time datetime="{{ timestamp }}" data-timestamp="{{ timestamp }}">{{ timestamp }}</time></a></div><div class="message-content">{{ content_html|safe }}</div></div>
 {%- endmacro %}
 
+{# Agent flow graph - rows_html is pre-rendered. #}
+{% macro agent_graph(subagent_count, spawn_count, rows_html) %}
+<details class="agent-graph" open><summary class="agent-graph-summary">Agent flow · {{ subagent_count }} subagent{{ 's' if subagent_count != 1 else '' }} across {{ spawn_count }} spawn point{{ 's' if spawn_count != 1 else '' }}</summary><div class="graph-body">{{ rows_html|safe }}</div></details>
+{%- endmacro %}
+
+{# Single-page side-nav item linking to an in-page prompt anchor #}
+{% macro nav_item(prompt_num, msg_id, timestamp, label) %}
+<a href="#{{ msg_id }}" data-target="{{ msg_id }}"><span class="nav-num">#{{ prompt_num }}</span> {{ label }}</a>
+{%- endmacro %}
+
 {# Subagent transcript - inline collapsible block. transcript_html is pre-rendered. #}
 {% macro subagent(agent_id, description, agent_type, tool_count, duration, tokens, msg_count, transcript_html) %}
 <details class="subagent" id="agent-{{ agent_id }}"><summary class="subagent-summary"><span class="subagent-icon">▶</span><span class="subagent-label">Subagent transcript</span><span class="subagent-title">{{ description or 'Subagent' }}</span><span class="subagent-meta">{% if msg_count %}{{ msg_count }} messages · {% endif %}{% if agent_type %}{{ agent_type }} · {% endif %}{% if tool_count %}{{ tool_count }} tool calls · {% endif %}{% if duration %}{{ duration }} · {% endif %}{% if tokens %}{{ tokens }} tokens{% endif %}</span></summary><div class="subagent-body">{{ transcript_html|safe }}</div></details>

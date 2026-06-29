@@ -1120,6 +1120,79 @@ def render_subagent(link):
     )
 
 
+def render_agent_graph(conversations, subagent_links):
+    """Render a flow graph of main agent → subagent spawns → main agent.
+
+    Each spawn point (an assistant turn that launched one or more subagents)
+    becomes a fan-out row whose nodes link to the inline subagent transcripts.
+    Returns an empty string when the session spawned no subagents.
+    """
+    if not subagent_links:
+        return ""
+
+    events = []  # list of [link, ...] per spawning assistant message
+    for conv in conversations:
+        for log_type, message_json, timestamp in conv["messages"]:
+            if log_type != "assistant":
+                continue
+            spawned = [
+                subagent_links[t]
+                for t in _task_ids_in_message(message_json)
+                if t in subagent_links
+            ]
+            if spawned:
+                events.append(spawned)
+    if not events:
+        return ""
+
+    rows = []
+    for spawned in events:
+        chips = []
+        for link in spawned:
+            meta = link.get("metadata") or {}
+            title = html.escape(link.get("description") or "Subagent")
+            sub = html.escape(meta.get("agentType", "") or "")
+            tools = meta.get("totalToolUseCount")
+            sub_meta = sub + (f" · {tools} tools" if tools else "")
+            chips.append(
+                f'<a class="graph-sub" href="#agent-{link["agent_id"]}">'
+                f'<span class="graph-sub-title">{title}</span>'
+                f'<span class="graph-sub-meta">{sub_meta}</span></a>'
+            )
+        plural = "s" if len(spawned) > 1 else ""
+        rows.append(
+            '<div class="graph-fan">'
+            '<div class="graph-main-node">main agent</div>'
+            f'<div class="graph-count">spawns {len(spawned)} subagent{plural}</div>'
+            f'<div class="graph-branches">{"".join(chips)}</div>'
+            "</div>"
+        )
+
+    return _macros.agent_graph(len(subagent_links), len(events), "".join(rows))
+
+
+def _render_conversation(conv, subagent_links):
+    """Render one conversation's messages (with inline subagents) to HTML."""
+    parts = []
+    is_first = True
+    for log_type, message_json, timestamp in conv["messages"]:
+        msg_html = render_message(log_type, message_json, timestamp)
+        if msg_html:
+            if is_first and conv.get("is_continuation"):
+                msg_html = (
+                    '<details class="continuation"><summary>Session continuation '
+                    f"summary</summary>{msg_html}</details>"
+                )
+            parts.append(msg_html)
+        if subagent_links:
+            for task_id in _task_ids_in_message(message_json):
+                link = subagent_links.get(task_id)
+                if link:
+                    parts.append(render_subagent(link))
+        is_first = False
+    return "".join(parts)
+
+
 def _task_ids_in_message(message_json):
     """Return the list of Task/Agent tool_use ids in a message JSON string."""
     try:
@@ -1173,6 +1246,30 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.agent-graph { border: 1px solid #7e57c2; border-radius: 10px; margin: 0 0 24px; background: #faf8fe; }
+.agent-graph-summary { cursor: pointer; padding: 12px 14px; font-weight: 600; color: #4527a0; }
+.graph-body { padding: 8px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+.graph-fan { display: grid; grid-template-columns: 120px auto 1fr; align-items: center; gap: 12px; position: relative; padding: 8px 0; }
+.graph-fan + .graph-fan { border-top: 1px dashed #d1c4e9; }
+.graph-main-node { background: #4527a0; color: #fff; text-align: center; padding: 8px 10px; border-radius: 8px; font-weight: 600; font-size: 0.8rem; }
+.graph-count { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+.graph-count::before { content: "→ "; color: #7e57c2; font-weight: 700; }
+.graph-branches { display: flex; flex-wrap: wrap; gap: 8px; }
+.graph-sub { display: flex; flex-direction: column; gap: 2px; text-decoration: none; background: #fff; border: 1px solid #b39ddb; border-left: 4px solid #7e57c2; border-radius: 8px; padding: 6px 10px; min-width: 0; transition: background 0.12s, transform 0.12s; }
+.graph-sub:hover { background: #ede7f6; transform: translateY(-1px); }
+.graph-sub-title { font-size: 0.82rem; font-weight: 600; color: #4527a0; }
+.graph-sub-meta { font-size: 0.72rem; color: var(--text-muted); }
+@media (max-width: 920px) { .graph-fan { grid-template-columns: 1fr; gap: 6px; } }
+.sp-layout { display: grid; grid-template-columns: 250px minmax(0, 820px); gap: 28px; max-width: 1120px; margin: 0 auto; align-items: start; }
+.transcript-nav { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; font-size: 0.85rem; padding: 8px; background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.nav-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.7rem; color: var(--text-muted); padding: 4px 10px 8px; }
+.transcript-nav a { display: block; padding: 6px 10px; color: var(--text-muted); text-decoration: none; border-left: 3px solid transparent; border-radius: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.transcript-nav a:hover { background: rgba(0,0,0,0.04); color: var(--text-color); }
+.transcript-nav a.active { color: var(--user-border); border-left-color: var(--user-border); background: var(--user-bg); font-weight: 600; }
+.nav-num { color: var(--user-border); font-weight: 600; }
+.transcript-main { min-width: 0; }
+.sp-stats { color: var(--text-muted); margin-bottom: 20px; }
+@media (max-width: 920px) { .sp-layout { grid-template-columns: 1fr; gap: 12px; } .transcript-nav { position: static; max-height: 240px; order: -1; } }
 .subagent { border: 2px solid #7e57c2; border-radius: 8px; margin: 14px 0; background: #f3eefb; overflow: hidden; }
 .subagent > .subagent-summary { cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; background: linear-gradient(135deg, #ede7f6 0%, #f3eefb 100%); }
 .subagent > .subagent-summary:hover { background: #e1d5f5; }
@@ -1415,6 +1512,48 @@ GIST_PREVIEW_JS = r"""
 """
 
 
+# Scroll-spy for the single-page transcript: highlight the nav link for the
+# prompt currently in view as the user scrolls.
+SCROLLSPY_JS = """
+(function() {
+    var sections = Array.prototype.slice.call(document.querySelectorAll('section.conv[data-nav]'));
+    var navLinks = {};
+    Array.prototype.forEach.call(document.querySelectorAll('.transcript-nav a[data-target]'), function(a) {
+        navLinks[a.getAttribute('data-target')] = a;
+    });
+    if (!sections.length || !Object.keys(navLinks).length) return;
+
+    var nav = document.querySelector('.transcript-nav');
+    function setActive(id) {
+        Object.keys(navLinks).forEach(function(key) {
+            navLinks[key].classList.toggle('active', key === id);
+        });
+        var active = navLinks[id];
+        if (active && nav && nav.scrollHeight > nav.clientHeight) {
+            var top = active.offsetTop - nav.clientHeight / 2;
+            nav.scrollTo({ top: top, behavior: 'smooth' });
+        }
+    }
+
+    var visible = {};
+    var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+            var id = entry.target.getAttribute('data-nav');
+            if (entry.isIntersecting) { visible[id] = entry.intersectionRatio; }
+            else { delete visible[id]; }
+        });
+        // Pick the topmost visible section in document order
+        for (var i = 0; i < sections.length; i++) {
+            var id = sections[i].getAttribute('data-nav');
+            if (visible[id]) { setActive(id); break; }
+        }
+    }, { rootMargin: '-8% 0px -70% 0px', threshold: [0, 0.25, 0.5, 1] });
+
+    sections.forEach(function(s) { observer.observe(s); });
+})();
+"""
+
+
 def inject_gist_preview_js(output_dir):
     """Inject gist preview JavaScript into all HTML files in the output directory."""
     output_dir = Path(output_dir)
@@ -1541,23 +1680,9 @@ def generate_html(json_path, output_dir, github_repo=None):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
-        messages_html = []
-        for conv in page_convs:
-            is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
-                if msg_html:
-                    # Wrap continuation summaries in collapsed details
-                    if is_first and conv.get("is_continuation"):
-                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
-                    messages_html.append(msg_html)
-                # Embed any subagent transcripts spawned by this message inline
-                if subagent_links:
-                    for task_id in _task_ids_in_message(message_json):
-                        link = subagent_links.get(task_id)
-                        if link:
-                            messages_html.append(render_subagent(link))
-                is_first = False
+        messages_html = [
+            _render_conversation(conv, subagent_links) for conv in page_convs
+        ]
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
@@ -1588,74 +1713,60 @@ def generate_html(json_path, output_dir, github_repo=None):
     total_tool_calls = sum(total_tool_counts.values())
     total_commits = len(all_commits)
 
-    # Build timeline items: prompts and commits merged by timestamp
-    timeline_items = []
-
-    # Add prompts
+    # Build the single scrolling page: a sticky prompt-nav + the full transcript.
+    # Conversations are grouped so continuation summaries fold into their prompt.
+    nav_items = []
+    sections = []
     prompt_num = 0
-    for i, conv in enumerate(conversations):
-        if conv.get("is_continuation"):
-            continue
-        if conv["user_text"].startswith("Stop hook feedback:"):
-            continue
-        prompt_num += 1
-        page_num = (i // PROMPTS_PER_PAGE) + 1
+    i = 0
+    while i < len(conversations):
+        conv = conversations[i]
+        group = [conv]
+        j = i + 1
+        while j < len(conversations) and conversations[j].get("is_continuation"):
+            group.append(conversations[j])
+            j += 1
+
         msg_id = make_msg_id(conv["timestamp"])
-        link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
-
-        # Collect all messages including from subsequent continuation conversations
-        # This ensures long_texts from continuations appear with the original prompt
-        all_messages = list(conv["messages"])
-        for j in range(i + 1, len(conversations)):
-            if not conversations[j].get("is_continuation"):
-                break
-            all_messages.extend(conversations[j]["messages"])
-
-        # Analyze conversation for stats (excluding commits from inline display now)
-        stats = analyze_conversation(all_messages)
-        tool_stats_str = format_tool_stats(stats["tool_counts"])
-
-        long_texts_html = ""
-        for lt in stats["long_texts"]:
-            rendered_lt = render_markdown_text(lt)
-            long_texts_html += _macros.index_long_text(rendered_lt)
-
-        stats_html = _macros.index_stats(tool_stats_str, long_texts_html)
-
-        item_html = _macros.index_item(
-            prompt_num, link, conv["timestamp"], rendered_content, stats_html
+        body = "".join(_render_conversation(c, subagent_links) for c in group)
+        sections.append(
+            f'<section class="conv" id="sec-{msg_id}" data-nav="{msg_id}">{body}</section>'
         )
-        timeline_items.append((conv["timestamp"], "prompt", item_html))
 
-    # Add commits as separate timeline items
-    for commit_ts, commit_hash, commit_msg, page_num, conv_idx in all_commits:
-        item_html = _macros.index_commit(
-            commit_hash, commit_msg, commit_ts, _github_repo
-        )
-        timeline_items.append((commit_ts, "commit", item_html))
+        navigable = not conv.get("is_continuation") and not conv[
+            "user_text"
+        ].startswith("Stop hook feedback:")
+        if navigable:
+            prompt_num += 1
+            label = " ".join(conv["user_text"].split())
+            if len(label) > 60:
+                label = label[:57] + "…"
+            nav_items.append(
+                _macros.nav_item(prompt_num, msg_id, conv["timestamp"], label)
+            )
+        i = j
 
-    # Sort by timestamp
-    timeline_items.sort(key=lambda x: x[0])
-    index_items = [item[2] for item in timeline_items]
+    graph_html = render_agent_graph(conversations, subagent_links)
 
-    index_pagination = generate_index_pagination_html(total_pages)
-    index_template = get_template("index.html")
-    index_content = index_template.render(
+    single_template = get_template("single.html")
+    index_content = single_template.render(
         css=CSS,
-        js=JS,
-        pagination_html=index_pagination,
+        js=JS + SCROLLSPY_JS,
         prompt_num=prompt_num,
         total_messages=total_messages,
         total_tool_calls=total_tool_calls,
         total_commits=total_commits,
         total_pages=total_pages,
-        index_items_html="".join(index_items),
+        subagent_count=len(subagent_links),
+        nav_items_html="".join(nav_items),
+        graph_html=graph_html,
+        transcript_html="".join(sections),
     )
     index_path = output_dir / "index.html"
     index_path.write_text(index_content, encoding="utf-8")
     print(
-        f"Generated {index_path.resolve()} ({total_convs} prompts, {total_pages} pages)"
+        f"Generated {index_path.resolve()} "
+        f"({prompt_num} prompts, {len(subagent_links)} subagents)"
     )
 
 
@@ -2024,23 +2135,9 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         start_idx = (page_num - 1) * PROMPTS_PER_PAGE
         end_idx = min(start_idx + PROMPTS_PER_PAGE, total_convs)
         page_convs = conversations[start_idx:end_idx]
-        messages_html = []
-        for conv in page_convs:
-            is_first = True
-            for log_type, message_json, timestamp in conv["messages"]:
-                msg_html = render_message(log_type, message_json, timestamp)
-                if msg_html:
-                    # Wrap continuation summaries in collapsed details
-                    if is_first and conv.get("is_continuation"):
-                        msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
-                    messages_html.append(msg_html)
-                # Embed any subagent transcripts spawned by this message inline
-                if subagent_links:
-                    for task_id in _task_ids_in_message(message_json):
-                        link = subagent_links.get(task_id)
-                        if link:
-                            messages_html.append(render_subagent(link))
-                is_first = False
+        messages_html = [
+            _render_conversation(conv, subagent_links) for conv in page_convs
+        ]
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
         page_content = page_template.render(
