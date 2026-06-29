@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-06-16T03:49:10.000Z","uuid":"sa1","parentUuid":null,"isSidechain":true,"agentId":"aaa111","message":{"role":"user","content":"Explore repo A and report."}}
+{"type":"assistant","timestamp":"2026-06-16T03:49:20.000Z","uuid":"sa2","isSidechain":true,"agentId":"aaa111","message":{"role":"assistant","content":[{"type":"text","text":"Looking at repo A files."},{"type":"tool_use","id":"t_g","name":"Grep","input":{"pattern":"def main"}}]}}
+{"type":"user","timestamp":"2026-06-16T03:49:25.000Z","uuid":"sa3","isSidechain":true,"agentId":"aaa111","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t_g","content":"main.py:1"}]}}
+{"type":"assistant","timestamp":"2026-06-16T03:49:40.000Z","uuid":"sa4","isSidechain":true,"agentId":"aaa111","message":{"role":"assistant","content":[{"type":"text","text":"Repo A summary."}]}}

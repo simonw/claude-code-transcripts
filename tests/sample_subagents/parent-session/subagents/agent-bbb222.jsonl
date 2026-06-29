@@ -1,0 +1,2 @@
+{"type":"user","timestamp":"2026-06-16T03:49:12.000Z","uuid":"sb1","parentUuid":null,"isSidechain":true,"agentId":"bbb222","message":{"role":"user","content":"Explore repo B and report."}}
+{"type":"assistant","timestamp":"2026-06-16T03:49:50.000Z","uuid":"sb2","isSidechain":true,"agentId":"bbb222","message":{"role":"assistant","content":[{"type":"text","text":"Repo B summary."}]}}

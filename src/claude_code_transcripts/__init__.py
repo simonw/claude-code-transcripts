@@ -499,6 +499,108 @@ def _parse_jsonl_file(filepath):
     return {"loglines": loglines}
 
 
+def _subagents_dir(session_path):
+    """Return the subagents/ directory for a parent session file, if it exists.
+
+    Claude Code stores subagent transcripts in
+    ``<session-id>/subagents/agent-<agentId>.jsonl`` alongside the parent
+    ``<session-id>.jsonl`` file.
+    """
+    session_path = Path(session_path)
+    candidate = session_path.parent / session_path.stem / "subagents"
+    return candidate if candidate.is_dir() else None
+
+
+def _extract_task_calls(filepath):
+    """Yield (tool_use_id, description) for each Task/Agent tool_use in a session.
+
+    Returns a dict mapping tool_use_id -> description (may be empty string).
+    """
+    descriptions = {}
+    with open(filepath, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            message = obj.get("message") or {}
+            content = message.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_use"
+                    and block.get("name") in ("Task", "Agent")
+                ):
+                    tool_input = block.get("input") or {}
+                    descriptions[block.get("id")] = tool_input.get("description", "")
+    return descriptions
+
+
+def link_subagents(session_path):
+    """Link Task/Agent tool calls in a parent session to their subagent transcripts.
+
+    Returns a dict keyed by the parent Task tool_use id. Each value is a dict:
+    - ``agent_id``: the subagent's agentId
+    - ``description``: the Task call's description (for labels)
+    - ``metadata``: the ``toolUseResult`` dict (status, totals, toolStats, ...)
+    - ``loglines``: the parsed subagent transcript (same shape as
+      ``parse_session_file`` loglines), or ``[]`` if the file is missing
+    """
+    session_path = Path(session_path)
+    subdir = _subagents_dir(session_path)
+    if subdir is None:
+        return {}
+
+    descriptions = _extract_task_calls(session_path)
+    links = {}
+
+    with open(session_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            result = obj.get("toolUseResult")
+            if not isinstance(result, dict):
+                continue
+            agent_id = result.get("agentId")
+            if not agent_id:
+                continue
+            # The tool_use_id is on the tool_result block in this message
+            tool_use_id = None
+            message = obj.get("message") or {}
+            content = message.get("content")
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tool_use_id = block.get("tool_use_id")
+                        break
+            if not tool_use_id:
+                continue
+
+            agent_file = subdir / f"agent-{agent_id}.jsonl"
+            loglines = []
+            if agent_file.is_file():
+                loglines = _parse_jsonl_file(agent_file).get("loglines", [])
+
+            links[tool_use_id] = {
+                "agent_id": agent_id,
+                "description": descriptions.get(tool_use_id, ""),
+                "metadata": result,
+                "loglines": loglines,
+            }
+
+    return links
+
+
 class CredentialsError(Exception):
     """Raised when credentials cannot be obtained."""
 
