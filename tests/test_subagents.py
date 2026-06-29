@@ -51,3 +51,6 @@ def test_generate_html_embeds_subagents_inline(tmp_path):
     assert "Looking at repo A files." in html
     # Tool-use count from metadata is surfaced
     assert "7" in html
+    # The block announces itself as a transcript with a message count
+    assert "Subagent transcript" in html
+    assert "4 messages" in html  # agent aaa111 has 4 loglines

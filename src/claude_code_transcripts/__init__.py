@@ -1098,8 +1098,9 @@ def _format_tokens(tokens):
 def render_subagent(link):
     """Render a linked subagent transcript as an inline collapsible block."""
     meta = link.get("metadata") or {}
+    loglines = link.get("loglines", [])
     transcript_parts = []
-    for entry in link.get("loglines", []):
+    for entry in loglines:
         msg_html = render_message(
             entry.get("type"),
             json.dumps(entry.get("message", {})),
@@ -1114,6 +1115,7 @@ def render_subagent(link):
         meta.get("totalToolUseCount"),
         _format_duration(meta.get("totalDurationMs")),
         _format_tokens(meta.get("totalTokens")),
+        len(loglines),
         "".join(transcript_parts),
     )
 
@@ -1171,12 +1173,15 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
-.subagent { border: 1px solid #7e57c2; border-left: 4px solid #7e57c2; border-radius: 8px; margin: 12px 0; background: #f3eefb; overflow: hidden; }
-.subagent > .subagent-summary { cursor: pointer; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; }
+.subagent { border: 2px solid #7e57c2; border-radius: 8px; margin: 14px 0; background: #f3eefb; overflow: hidden; }
+.subagent > .subagent-summary { cursor: pointer; padding: 12px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; background: linear-gradient(135deg, #ede7f6 0%, #f3eefb 100%); }
+.subagent > .subagent-summary:hover { background: #e1d5f5; }
 .subagent > .subagent-summary::-webkit-details-marker { display: none; }
-.subagent-icon { font-weight: 700; }
+.subagent-icon { font-weight: 700; font-size: 0.8rem; transition: transform 0.15s; display: inline-block; }
+.subagent[open] > .subagent-summary .subagent-icon { transform: rotate(90deg); }
+.subagent-label { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.7rem; background: #7e57c2; color: #fff; padding: 2px 8px; border-radius: 10px; }
 .subagent-title { font-weight: 600; }
-.subagent-meta { color: var(--text-muted); font-size: 0.8rem; }
+.subagent-meta { color: var(--text-muted); font-size: 0.8rem; width: 100%; padding-left: 22px; }
 .subagent[open] > .subagent-summary { border-bottom: 1px solid #d1c4e9; }
 .subagent-body { padding: 12px; background: rgba(126,87,194,0.05); }
 .subagent-body .message { box-shadow: none; }

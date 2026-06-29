@@ -157,8 +157,8 @@
 {%- endmacro %}
 
 {# Subagent transcript - inline collapsible block. transcript_html is pre-rendered. #}
-{% macro subagent(agent_id, description, agent_type, tool_count, duration, tokens, transcript_html) %}
-<details class="subagent" id="agent-{{ agent_id }}"><summary class="subagent-summary"><span class="subagent-icon">⤷</span><span class="subagent-title">{{ description or 'Subagent' }}</span><span class="subagent-meta">{% if agent_type %}{{ agent_type }} · {% endif %}{% if tool_count %}{{ tool_count }} tool calls · {% endif %}{% if duration %}{{ duration }} · {% endif %}{% if tokens %}{{ tokens }} tokens{% endif %}</span></summary><div class="subagent-body">{{ transcript_html|safe }}</div></details>
+{% macro subagent(agent_id, description, agent_type, tool_count, duration, tokens, msg_count, transcript_html) %}
+<details class="subagent" id="agent-{{ agent_id }}"><summary class="subagent-summary"><span class="subagent-icon">▶</span><span class="subagent-label">Subagent transcript</span><span class="subagent-title">{{ description or 'Subagent' }}</span><span class="subagent-meta">{% if msg_count %}{{ msg_count }} messages · {% endif %}{% if agent_type %}{{ agent_type }} · {% endif %}{% if tool_count %}{{ tool_count }} tool calls · {% endif %}{% if duration %}{{ duration }} · {% endif %}{% if tokens %}{{ tokens }} tokens{% endif %}</span></summary><div class="subagent-body">{{ transcript_html|safe }}</div></details>
 {%- endmacro %}
 
 {# Continuation wrapper - content_html is pre-rendered so needs |safe #}
