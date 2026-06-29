@@ -38,6 +38,15 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.subagent { border: 1px solid #7e57c2; border-left: 4px solid #7e57c2; border-radius: 8px; margin: 12px 0; background: #f3eefb; overflow: hidden; }
+.subagent > .subagent-summary { cursor: pointer; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; }
+.subagent > .subagent-summary::-webkit-details-marker { display: none; }
+.subagent-icon { font-weight: 700; }
+.subagent-title { font-weight: 600; }
+.subagent-meta { color: var(--text-muted); font-size: 0.8rem; }
+.subagent[open] > .subagent-summary { border-bottom: 1px solid #d1c4e9; }
+.subagent-body { padding: 12px; background: rgba(126,87,194,0.05); }
+.subagent-body .message { box-shadow: none; }
 .tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .tool-result.tool-error { background: var(--tool-error-bg); }
 .file-tool { border-radius: 8px; padding: 12px; margin: 12px 0; }

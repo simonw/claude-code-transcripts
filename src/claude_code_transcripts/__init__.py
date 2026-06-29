@@ -1073,6 +1073,70 @@ def render_message(log_type, message_json, timestamp):
     return _macros.message(role_class, role_label, msg_id, timestamp, content_html)
 
 
+def _format_duration(ms):
+    """Format a millisecond duration into a short human string."""
+    if not ms:
+        return ""
+    seconds = ms / 1000
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes = seconds / 60
+    if minutes < 60:
+        return f"{minutes:.0f}m {seconds % 60:.0f}s"
+    return f"{minutes / 60:.0f}h {minutes % 60:.0f}m"
+
+
+def _format_tokens(tokens):
+    """Format a token count compactly (e.g. 3.4k)."""
+    if not tokens:
+        return ""
+    if tokens < 1000:
+        return str(tokens)
+    return f"{tokens / 1000:.1f}k"
+
+
+def render_subagent(link):
+    """Render a linked subagent transcript as an inline collapsible block."""
+    meta = link.get("metadata") or {}
+    transcript_parts = []
+    for entry in link.get("loglines", []):
+        msg_html = render_message(
+            entry.get("type"),
+            json.dumps(entry.get("message", {})),
+            entry.get("timestamp", ""),
+        )
+        if msg_html:
+            transcript_parts.append(msg_html)
+    return _macros.subagent(
+        link.get("agent_id", ""),
+        link.get("description", ""),
+        meta.get("agentType", ""),
+        meta.get("totalToolUseCount"),
+        _format_duration(meta.get("totalDurationMs")),
+        _format_tokens(meta.get("totalTokens")),
+        "".join(transcript_parts),
+    )
+
+
+def _task_ids_in_message(message_json):
+    """Return the list of Task/Agent tool_use ids in a message JSON string."""
+    try:
+        message_data = json.loads(message_json)
+    except (json.JSONDecodeError, TypeError):
+        return []
+    content = message_data.get("content")
+    if not isinstance(content, list):
+        return []
+    return [
+        block.get("id")
+        for block in content
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and block.get("name") in ("Task", "Agent")
+        and block.get("id")
+    ]
+
+
 CSS = """
 :root { --bg-color: #f5f5f5; --card-bg: #ffffff; --user-bg: #e3f2fd; --user-border: #1976d2; --assistant-bg: #f5f5f5; --assistant-border: #9e9e9e; --thinking-bg: #fff8e1; --thinking-border: #ffc107; --thinking-text: #666; --tool-bg: #f3e5f5; --tool-border: #9c27b0; --tool-result-bg: #e8f5e9; --tool-error-bg: #ffebee; --text-color: #212121; --text-muted: #757575; --code-bg: #263238; --code-text: #aed581; }
 * { box-sizing: border-box; }
@@ -1107,6 +1171,15 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-header { font-weight: 600; color: var(--tool-border); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
 .tool-icon { font-size: 1.1rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
+.subagent { border: 1px solid #7e57c2; border-left: 4px solid #7e57c2; border-radius: 8px; margin: 12px 0; background: #f3eefb; overflow: hidden; }
+.subagent > .subagent-summary { cursor: pointer; padding: 10px 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.9rem; color: #4527a0; list-style: none; }
+.subagent > .subagent-summary::-webkit-details-marker { display: none; }
+.subagent-icon { font-weight: 700; }
+.subagent-title { font-weight: 600; }
+.subagent-meta { color: var(--text-muted); font-size: 0.8rem; }
+.subagent[open] > .subagent-summary { border-bottom: 1px solid #d1c4e9; }
+.subagent-body { padding: 12px; background: rgba(126,87,194,0.05); }
+.subagent-body .message { box-shadow: none; }
 .tool-result { background: var(--tool-result-bg); border-radius: 8px; padding: 12px; margin: 12px 0; }
 .tool-result.tool-error { background: var(--tool-error-bg); }
 .file-tool { border-radius: 8px; padding: 12px; margin: 12px 0; }
@@ -1420,6 +1493,9 @@ def generate_html(json_path, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
+    # Link Task/Agent tool calls to their subagent transcripts (if any)
+    subagent_links = link_subagents(json_path)
+
     conversations = []
     current_conv = None
     for entry in loglines:
@@ -1470,6 +1546,12 @@ def generate_html(json_path, output_dir, github_repo=None):
                     if is_first and conv.get("is_continuation"):
                         msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
                     messages_html.append(msg_html)
+                # Embed any subagent transcripts spawned by this message inline
+                if subagent_links:
+                    for task_id in _task_ids_in_message(message_json):
+                        link = subagent_links.get(task_id)
+                        if link:
+                            messages_html.append(render_subagent(link))
                 is_first = False
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")
@@ -1894,6 +1976,9 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
     global _github_repo
     _github_repo = github_repo
 
+    # API/web sessions have no local subagent files to link
+    subagent_links = {}
+
     conversations = []
     current_conv = None
     for entry in loglines:
@@ -1944,6 +2029,12 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
                     if is_first and conv.get("is_continuation"):
                         msg_html = f'<details class="continuation"><summary>Session continuation summary</summary>{msg_html}</details>'
                     messages_html.append(msg_html)
+                # Embed any subagent transcripts spawned by this message inline
+                if subagent_links:
+                    for task_id in _task_ids_in_message(message_json):
+                        link = subagent_links.get(task_id)
+                        if link:
+                            messages_html.append(render_subagent(link))
                 is_first = False
         pagination_html = generate_pagination_html(page_num, total_pages)
         page_template = get_template("page.html")

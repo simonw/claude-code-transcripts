@@ -60,6 +60,12 @@ The generated output includes:
 - `index.html` - an index page with a timeline of prompts and commits
 - `page-001.html`, `page-002.html`, etc. - paginated transcript pages
 
+When a session spawns subagents (via the `Task`/`Agent` tool), their transcripts
+are stored by Claude Code in `<session-id>/subagents/agent-<id>.jsonl`. These are
+linked back to the spawning tool call and rendered inline as collapsible blocks,
+labelled with the agent type, tool-call count, duration, and token usage — so you
+can follow the flow from the main agent into each subagent and back.
+
 ### Local sessions
 
 Local Claude Code sessions are stored as JSONL files in `~/.claude/projects`. Run with no arguments to select from recent sessions:

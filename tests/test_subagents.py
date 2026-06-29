@@ -33,3 +33,21 @@ def test_link_subagents_no_subagents_dir(tmp_path):
         '{"type":"user","timestamp":"t","message":{"role":"user","content":"hi"}}\n'
     )
     assert link_subagents(p) == {}
+
+
+def test_generate_html_embeds_subagents_inline(tmp_path):
+    from claude_code_transcripts import generate_html
+
+    out = tmp_path / "out"
+    generate_html(str(FIXTURE), str(out), github_repo=None)
+    html = (out / "page-001.html").read_text()
+
+    # The subagent block is rendered as a collapsible details element
+    assert 'class="subagent"' in html
+    # Labelled by the Task description and agent metadata
+    assert "Explore repo A" in html
+    assert "Explore repo B" in html
+    # The nested subagent transcript content appears inline
+    assert "Looking at repo A files." in html
+    # Tool-use count from metadata is surfaced
+    assert "7" in html
