@@ -87,3 +87,7 @@ def test_agent_graph_renders_spawn_flow(tmp_path):
     # Both subagents appear as nodes that jump to their inline transcript anchors
     assert 'href="#agent-aaa111"' in index
     assert 'href="#agent-bbb222"' in index
+    # The graph is drawn as an SVG with curved (cubic-bezier) connector edges
+    assert "<svg" in index
+    assert 'class="graph-edge"' in index
+    assert "<path" in index and " C " in index  # bezier curve command

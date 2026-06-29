@@ -1145,30 +1145,77 @@ def render_agent_graph(conversations, subagent_links):
     if not events:
         return ""
 
-    rows = []
-    for spawned in events:
-        chips = []
+    # SVG layout (user units). The main agent is a vertical spine on the left;
+    # each spawn point fans out with cubic-bezier curves to its subagent nodes.
+    pad, spine_x, box_x = 22, 44, 196
+    box_w, box_h, row = 360, 50, 70
+    palette = ["#7e57c2", "#26a69a", "#ef6c00", "#42a5f5", "#ec407a", "#43a047"]
+    total_subs = sum(len(e) for e in events)
+    width = box_x + box_w + pad
+    height = pad * 2 + (total_subs - 1) * row + box_h
+
+    edges, dots, nodes, dot_ys = [], [], [], []
+    r = 0
+    for ei, spawned in enumerate(events):
+        color = palette[ei % len(palette)]
+        centers = []
         for link in spawned:
+            box_top = pad + r * row
+            box_cy = box_top + box_h / 2
+            centers.append(box_cy)
             meta = link.get("metadata") or {}
             title = html.escape(link.get("description") or "Subagent")
-            sub = html.escape(meta.get("agentType", "") or "")
-            tools = meta.get("totalToolUseCount")
-            sub_meta = sub + (f" · {tools} tools" if tools else "")
-            chips.append(
-                f'<a class="graph-sub" href="#agent-{link["agent_id"]}">'
-                f'<span class="graph-sub-title">{title}</span>'
-                f'<span class="graph-sub-meta">{sub_meta}</span></a>'
+            bits = " · ".join(
+                b
+                for b in (
+                    html.escape(meta.get("agentType", "") or ""),
+                    (
+                        f"{meta['totalToolUseCount']} tools"
+                        if meta.get("totalToolUseCount")
+                        else ""
+                    ),
+                    _format_duration(meta.get("totalDurationMs")),
+                )
+                if b
             )
-        plural = "s" if len(spawned) > 1 else ""
-        rows.append(
-            '<div class="graph-fan">'
-            '<div class="graph-main-node">main agent</div>'
-            f'<div class="graph-count">spawns {len(spawned)} subagent{plural}</div>'
-            f'<div class="graph-branches">{"".join(chips)}</div>'
-            "</div>"
+            nodes.append(
+                f'<foreignObject x="{box_x}" y="{box_top}" width="{box_w}" height="{box_h}">'
+                f'<a xmlns="http://www.w3.org/1999/xhtml" class="graph-node" '
+                f'href="#agent-{link["agent_id"]}" style="border-left-color:{color}">'
+                f'<span class="graph-node-title">{title}</span>'
+                f'<span class="graph-node-meta">{bits}</span></a></foreignObject>'
+            )
+            r += 1
+        dot_y = sum(centers) / len(centers)
+        dot_ys.append(dot_y)
+        cx = (box_x - spine_x) * 0.55
+        for cy in centers:
+            edges.append(
+                f'<path class="graph-edge" fill="none" stroke="{color}" '
+                f'stroke-width="2.5" d="M {spine_x} {dot_y:.1f} '
+                f"C {spine_x + cx:.1f} {dot_y:.1f}, {box_x - cx:.1f} {cy:.1f}, "
+                f'{box_x} {cy:.1f}"/>'
+            )
+        dots.append(
+            f'<circle cx="{spine_x}" cy="{dot_y:.1f}" r="6.5" fill="{color}" '
+            'stroke="#fff" stroke-width="2"/>'
         )
 
-    return _macros.agent_graph(len(subagent_links), len(events), "".join(rows))
+    spine = ""
+    if len(dot_ys) > 1:
+        spine = (
+            f'<line class="graph-spine" x1="{spine_x}" y1="{min(dot_ys):.1f}" '
+            f'x2="{spine_x}" y2="{max(dot_ys):.1f}" stroke="#b0bec5" stroke-width="3"/>'
+        )
+
+    svg = (
+        f'<svg class="graph-svg" viewBox="0 0 {width} {height}" '
+        f'style="max-width:{width}px" preserveAspectRatio="xMinYMin meet" '
+        f'xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Agent flow graph">'
+        f'<text class="graph-spine-label" x="{spine_x}" y="12" text-anchor="middle">main</text>'
+        f'{spine}{"".join(edges)}{"".join(dots)}{"".join(nodes)}</svg>'
+    )
+    return _macros.agent_graph(len(subagent_links), len(events), svg)
 
 
 def _render_conversation(conv, subagent_links):
@@ -1248,18 +1295,14 @@ time { color: var(--text-muted); font-size: 0.8rem; }
 .tool-description { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 8px; font-style: italic; }
 .agent-graph { border: 1px solid #7e57c2; border-radius: 10px; margin: 0 0 24px; background: #faf8fe; }
 .agent-graph-summary { cursor: pointer; padding: 12px 14px; font-weight: 600; color: #4527a0; }
-.graph-body { padding: 8px 14px 16px; display: flex; flex-direction: column; gap: 8px; }
-.graph-fan { display: grid; grid-template-columns: 120px auto 1fr; align-items: center; gap: 12px; position: relative; padding: 8px 0; }
-.graph-fan + .graph-fan { border-top: 1px dashed #d1c4e9; }
-.graph-main-node { background: #4527a0; color: #fff; text-align: center; padding: 8px 10px; border-radius: 8px; font-weight: 600; font-size: 0.8rem; }
-.graph-count { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
-.graph-count::before { content: "→ "; color: #7e57c2; font-weight: 700; }
-.graph-branches { display: flex; flex-wrap: wrap; gap: 8px; }
-.graph-sub { display: flex; flex-direction: column; gap: 2px; text-decoration: none; background: #fff; border: 1px solid #b39ddb; border-left: 4px solid #7e57c2; border-radius: 8px; padding: 6px 10px; min-width: 0; transition: background 0.12s, transform 0.12s; }
-.graph-sub:hover { background: #ede7f6; transform: translateY(-1px); }
-.graph-sub-title { font-size: 0.82rem; font-weight: 600; color: #4527a0; }
-.graph-sub-meta { font-size: 0.72rem; color: var(--text-muted); }
-@media (max-width: 920px) { .graph-fan { grid-template-columns: 1fr; gap: 6px; } }
+.graph-body { padding: 8px 14px 16px; overflow-x: auto; }
+.graph-svg { display: block; width: 100%; height: auto; }
+.graph-spine-label { font-size: 11px; font-weight: 700; fill: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.graph-edge { transition: stroke-width 0.12s; }
+.graph-node { display: flex; flex-direction: column; justify-content: center; gap: 2px; height: 100%; box-sizing: border-box; background: #fff; border: 1px solid #d1c4e9; border-left: 4px solid #7e57c2; border-radius: 8px; padding: 4px 12px; text-decoration: none; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+.graph-node:hover { background: #ede7f6; }
+.graph-node-title { font-size: 0.82rem; font-weight: 600; color: #4527a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.graph-node-meta { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sp-layout { display: grid; grid-template-columns: 250px minmax(0, 820px); gap: 28px; max-width: 1120px; margin: 0 auto; align-items: start; }
 .transcript-nav { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; font-size: 0.85rem; padding: 8px; background: var(--card-bg); border-radius: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 .nav-title { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; font-size: 0.7rem; color: var(--text-muted); padding: 4px 10px 8px; }
