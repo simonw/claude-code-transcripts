@@ -698,10 +698,40 @@ def format_json(obj):
         return f"<pre>{html.escape(str(obj))}</pre>"
 
 
+# Tags that can execute code or navigate the page if they survive as live HTML.
+# Python-Markdown passes raw HTML through verbatim, so any of these present in a
+# message (outside a code fence, where the angle brackets would be escaped)
+# become live elements. A real example: pasted captive-portal debug logs holding
+#   <script>top.self.location.href='http://.../portal?...'</script>
+# hijack the transcript on load and it never renders. Markdown never emits these
+# tags itself, so escaping them back to visible text leaves normal content alone.
+_ACTIVE_TAG_RE = re.compile(
+    r"</?\s*(?:script|iframe|object|embed|applet|meta|link|base|frame|frameset|form)\b[^>]*>",
+    re.I,
+)
+# Inline event handlers (onerror=, onload=, …) and javascript: URIs execute
+# without a <script> tag, e.g. <img src=x onerror=...>.
+_EVENT_HANDLER_RE = re.compile(r"(<[^>]*?)\s+on\w+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s>]+)", re.I)
+_JS_URI_RE = re.compile(r"((?:href|src)\s*=\s*[\"']?)\s*javascript:", re.I)
+
+
+def neutralize_active_html(rendered):
+    """Defang page-hijacking HTML that markdown passed through from the source."""
+    rendered = _ACTIVE_TAG_RE.sub(lambda m: html.escape(m.group(0), quote=False), rendered)
+    prev = None
+    while prev != rendered:  # loop so multiple handlers on one tag all go
+        prev = rendered
+        rendered = _EVENT_HANDLER_RE.sub(r"\1", rendered)
+    rendered = _JS_URI_RE.sub(r"\1", rendered)
+    return rendered
+
+
 def render_markdown_text(text):
     if not text:
         return ""
-    return markdown.markdown(text, extensions=["fenced_code", "tables"])
+    return neutralize_active_html(
+        markdown.markdown(text, extensions=["fenced_code", "tables"])
+    )
 
 
 def is_json_like(text):

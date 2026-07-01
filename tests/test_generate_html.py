@@ -131,6 +131,37 @@ class TestRenderFunctions:
         assert render_markdown_text("") == ""
         assert render_markdown_text(None) == ""
 
+    def test_render_markdown_neutralizes_script(self):
+        """Raw <script> in message text must not survive as a live tag.
+
+        Markdown passes raw HTML through verbatim, so a pasted log line such as
+        a captive-portal redirect would otherwise hijack the page on load.
+        """
+        result = render_markdown_text(
+            "log: <script>top.self.location.href='http://evil/x'</script>"
+        )
+        assert "<script>" not in result
+        assert "&lt;script&gt;top.self.location.href=" in result
+
+    def test_render_markdown_neutralizes_handlers_and_js_uris(self):
+        """Event handlers and javascript: URIs execute without a <script> tag."""
+        result = render_markdown_text('<img src=x onerror="boom()">')
+        assert "onerror" not in result
+        result = render_markdown_text('<a href="javascript:boom()">x</a>')
+        assert "javascript:" not in result
+
+    def test_render_markdown_preserves_normal_content(self):
+        """Sanitization must leave ordinary markdown untouched."""
+        result = render_markdown_text(
+            "# Title\n\n**bold** and `code` and a [link](http://ok).\n\n```\n<script>in a fence</script>\n```"
+        )
+        assert "<strong>bold</strong>" in result
+        assert "<code>code</code>" in result
+        assert 'href="http://ok"' in result
+        # Inside a fence markdown already escapes it; must stay visible text.
+        assert "<script>in a fence" not in result
+        assert "&lt;script&gt;in a fence" in result
+
     def test_format_json(self, snapshot_html):
         """Test JSON formatting."""
         result = format_json({"key": "value", "number": 42, "nested": {"a": 1}})
