@@ -1616,6 +1616,19 @@ class TestSearchFeature:
         # CSS should style the search modal
         assert "#search-modal" in index_html or ".search-modal" in index_html
 
+    def test_dark_mode_media_query_present(self, output_dir):
+        """Test that CSS includes a prefers-color-scheme dark mode override."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+
+        assert "@media (prefers-color-scheme: dark)" in index_html
+        # The dark override should redefine the same custom properties
+        # used by the light :root block, not introduce unrelated ones.
+        assert "--bg-color" in index_html
+        assert "--text-color" in index_html
+
     def test_search_box_hidden_by_default_in_css(self, output_dir):
         """Test that search box is hidden by default (for progressive enhancement)."""
         fixture_path = Path(__file__).parent / "sample_session.json"
