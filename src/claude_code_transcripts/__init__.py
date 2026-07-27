@@ -701,7 +701,14 @@ def format_json(obj):
 def render_markdown_text(text):
     if not text:
         return ""
-    return markdown.markdown(text, extensions=["fenced_code", "tables"])
+    # Render literal HTML in message text as visible text rather than live markup: an unclosed
+    # <style>/<script> in a prompt would otherwise swallow the rest of the page. Deregistering the
+    # HTML handlers (rather than escaping the input first) keeps fenced code blocks intact, since
+    # fenced_code stashes their content in a preprocessor that runs before html_block.
+    md = markdown.Markdown(extensions=["fenced_code", "tables"])
+    md.preprocessors.deregister("html_block")
+    md.inlinePatterns.deregister("html")
+    return md.convert(text)
 
 
 def is_json_like(text):
