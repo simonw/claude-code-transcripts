@@ -131,6 +131,20 @@ class TestRenderFunctions:
         assert render_markdown_text("") == ""
         assert render_markdown_text(None) == ""
 
+    def test_render_markdown_text_escapes_literal_html(self):
+        """Literal HTML in message text renders as visible text, not live markup."""
+        result = render_markdown_text("Leave the <head> and the <style> block alone.")
+        assert "&lt;head&gt;" in result
+        assert "&lt;style&gt;" in result
+        assert "<head>" not in result
+        assert "<style>" not in result
+
+    def test_render_markdown_text_keeps_fenced_html(self):
+        """A fenced code block containing HTML is preserved as escaped code, not dropped."""
+        result = render_markdown_text("text\n\n```html\n<div>x</div>\n```")
+        assert "<pre>" in result
+        assert "&lt;div&gt;x&lt;/div&gt;" in result
+
     def test_format_json(self, snapshot_html):
         """Test JSON formatting."""
         result = format_json({"key": "value", "number": 42, "nested": {"a": 1}})
