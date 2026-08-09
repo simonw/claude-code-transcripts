@@ -190,3 +190,13 @@
 {% macro index_long_text(rendered_content) %}
 <div class="index-item-long-text"><div class="truncatable"><div class="truncatable-content"><div class="index-item-long-text-content">{{ rendered_content|safe }}</div></div><button class="expand-btn">Show more</button></div></div>
 {%- endmacro %}
+
+{# Background task completion. summary_html/result_html are pre-escaped so need |safe #}
+{% macro task_notification(task_id, tool_use_id, status, summary_html, result_html) %}
+<div class="task-notification-body">
+{%- if status %}<span class="task-status task-status-{{ status }}">{{ status }}</span>{% endif -%}
+{%- if summary_html %}<span class="task-summary">{{ summary_html|safe }}</span>{% endif -%}
+{%- if task_id %}<div class="task-meta">task <code>{{ task_id }}</code>{% if tool_use_id %} &middot; tool <code>{{ tool_use_id }}</code>{% endif %}</div>{% endif -%}
+{%- if result_html %}<pre class="task-result">{{ result_html|safe }}</pre>{% endif -%}
+</div>
+{%- endmacro %}

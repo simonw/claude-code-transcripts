@@ -16,6 +16,14 @@ h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom:
 .message.user { background: var(--user-bg); border-left: 4px solid var(--user-border); }
 .message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); }
 .message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; }
+.message.task-notification { background: #eceff1; border-left: 4px solid #607d8b; }
+.task-notification .role-label { color: #455a64; }
+.task-notification-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 0.9rem; }
+.task-status { text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; background: #cfd8dc; color: #37474f; }
+.task-status-completed { background: #c8e6c9; color: #1b5e20; }
+.task-status-failed { background: #ffcdd2; color: #b71c1c; }
+.task-meta { flex-basis: 100%; color: var(--text-muted); font-size: 0.8rem; }
+.task-result { flex-basis: 100%; margin: 4px 0 0 0; }
 .tool-reply .role-label { color: #e65100; }
 .tool-reply .tool-result { background: transparent; padding: 0; margin: 0; }
 .tool-reply .tool-result .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, #fff8e1); }

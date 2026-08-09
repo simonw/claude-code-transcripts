@@ -21,6 +21,8 @@ from claude_code_transcripts import (
     analyze_conversation,
     format_tool_stats,
     is_tool_result_message,
+    is_task_notification,
+    render_message,
     inject_gist_preview_js,
     create_gist,
     GIST_PREVIEW_JS,
@@ -1638,3 +1640,90 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestTaskNotifications:
+    """Background task completions arriving as `type: user` entries.
+
+    When a tool runs with run_in_background=true, the completion comes back as a user
+    entry whose message.content is a *string* starting with <task-notification> -- not
+    the usual list of tool_result blocks. is_tool_result_message() only recognises the
+    list form, so these were labelled "User" in a blue prompt panel, and a long session
+    read as though the human had typed system XML at intervals (issue #99).
+    """
+
+    NOTIFICATION = (
+        "<task-notification>\n"
+        "<task-id>bash_AAA</task-id>\n"
+        "<tool-use-id>toolu_AAA</tool-use-id>\n"
+        "<status>completed</status>\n"
+        '<summary>Background command "Long task" completed (exit code 0)</summary>\n'
+        "</task-notification>"
+    )
+
+    def test_a_notification_is_recognised(self):
+        assert is_task_notification({"content": self.NOTIFICATION}) is True
+
+    def test_a_real_user_prompt_is_not(self):
+        """The control. Only the string form starting with the tag counts."""
+        assert is_task_notification({"content": "please fix the tests"}) is False
+        assert is_task_notification({"content": [{"type": "tool_result"}]}) is False
+        assert is_task_notification({"content": ""}) is False
+        assert (
+            is_task_notification({"content": "I asked <task-notification> about it"})
+            is False
+        ), "the tag has to start the string, not merely appear in it"
+
+    def test_leading_whitespace_does_not_hide_it(self):
+        assert is_task_notification({"content": "\n  " + self.NOTIFICATION}) is True
+
+    def test_it_is_not_labelled_as_a_user_prompt(self):
+        html_out = render_message(
+            "user",
+            json.dumps({"content": self.NOTIFICATION}),
+            "2026-01-01T10:00:31.000Z",
+        )
+
+        assert 'class="message user"' not in html_out
+        assert ">User<" not in html_out
+
+    def test_the_status_and_summary_are_shown_rather_than_raw_xml(self):
+        html_out = render_message(
+            "user",
+            json.dumps({"content": self.NOTIFICATION}),
+            "2026-01-01T10:00:31.000Z",
+        )
+
+        assert "completed" in html_out
+        assert "Long task" in html_out
+        assert "&lt;task-id&gt;" not in html_out, "raw XML is still on the page"
+
+    def test_the_task_id_is_shown_so_it_can_be_tied_to_its_tool_use(self):
+        html_out = render_message(
+            "user",
+            json.dumps({"content": self.NOTIFICATION}),
+            "2026-01-01T10:00:31.000Z",
+        )
+
+        assert "bash_AAA" in html_out
+
+    def test_unparseable_xml_still_renders_as_a_notification(self):
+        """A malformed notification must not fall back to looking like a human prompt."""
+        broken = "<task-notification><status>done</notification-task>"
+        html_out = render_message(
+            "user", json.dumps({"content": broken}), "2026-01-01T10:00:31.000Z"
+        )
+
+        assert 'class="message user"' not in html_out
+        assert html_out.strip(), "the entry disappeared entirely"
+
+    def test_html_inside_a_notification_is_escaped(self):
+        payload = (
+            "<task-notification><task-id>x</task-id><status>failed</status>"
+            "<summary><script>alert(1)</script></summary></task-notification>"
+        )
+        html_out = render_message(
+            "user", json.dumps({"content": payload}), "2026-01-01T10:00:31.000Z"
+        )
+
+        assert "<script>" not in html_out
