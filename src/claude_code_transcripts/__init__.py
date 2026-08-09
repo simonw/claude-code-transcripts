@@ -698,6 +698,142 @@ def format_json(obj):
         return f"<pre>{html.escape(str(obj))}</pre>"
 
 
+# Any ANSI escape sequence. Group 1 is the parameter list and group 2 the final byte,
+# so SGR ("m") can be rendered while cursor moves, erases and the rest are dropped.
+ANSI_ESCAPE_RE = re.compile(r"\x1b(?:\[([0-9;:]*)([A-Za-z])|[@-Z\\-_])")
+
+# The 16 named colours, as the palette a terminal would use.
+ANSI_COLORS = [
+    "#000000",
+    "#cd0000",
+    "#00cd00",
+    "#cdcd00",
+    "#0000ee",
+    "#cd00cd",
+    "#00cdcd",
+    "#e5e5e5",
+    "#7f7f7f",
+    "#ff0000",
+    "#00ff00",
+    "#ffff00",
+    "#5c5cff",
+    "#ff00ff",
+    "#00ffff",
+    "#ffffff",
+]
+
+
+def _xterm256_color(n):
+    """Hex for one of the 256 xterm palette entries."""
+    if n < 16:
+        return ANSI_COLORS[n]
+    if n < 232:
+        n -= 16
+        levels = (0, 95, 135, 175, 215, 255)
+        return "#{:02x}{:02x}{:02x}".format(
+            levels[n // 36], levels[(n // 6) % 6], levels[n % 6]
+        )
+    grey = 8 + (n - 232) * 10
+    return "#{:02x}{:02x}{:02x}".format(grey, grey, grey)
+
+
+def _sgr_styles(params, styles):
+    """Apply one SGR parameter list to the running *styles* dict."""
+    codes = [int(p) if p.isdigit() else 0 for p in (params or "0").split(";")]
+    i = 0
+    while i < len(codes):
+        code = codes[i]
+        if code == 0:
+            styles.clear()
+        elif code == 1:
+            styles["font-weight"] = "bold"
+        elif code == 2:
+            styles["opacity"] = "0.7"
+        elif code == 3:
+            styles["font-style"] = "italic"
+        elif code == 4:
+            styles["text-decoration"] = "underline"
+        elif code == 9:
+            styles["text-decoration"] = "line-through"
+        elif code in (22, 23, 24, 29):
+            # The matching "off" codes. 22 turns off both bold and dim.
+            for prop in {
+                22: ("font-weight", "opacity"),
+                23: ("font-style",),
+                24: ("text-decoration",),
+                29: ("text-decoration",),
+            }[code]:
+                styles.pop(prop, None)
+        elif code in (38, 48) and i + 1 < len(codes):
+            # Extended colour: 5;N (256-palette) or 2;R;G;B (truecolor).
+            prop = "color" if code == 38 else "background-color"
+            if codes[i + 1] == 5 and i + 2 < len(codes):
+                styles[prop] = _xterm256_color(codes[i + 2])
+                i += 2
+            elif codes[i + 1] == 2 and i + 4 < len(codes):
+                styles[prop] = "#{:02x}{:02x}{:02x}".format(*codes[i + 2 : i + 5])
+                i += 4
+        elif 30 <= code <= 37:
+            styles["color"] = ANSI_COLORS[code - 30]
+        elif 90 <= code <= 97:
+            styles["color"] = ANSI_COLORS[code - 90 + 8]
+        elif 40 <= code <= 47:
+            styles["background-color"] = ANSI_COLORS[code - 40]
+        elif 100 <= code <= 107:
+            styles["background-color"] = ANSI_COLORS[code - 100 + 8]
+        elif code == 39:
+            styles.pop("color", None)
+        elif code == 49:
+            styles.pop("background-color", None)
+        i += 1
+
+
+def render_ansi_text(text):
+    """HTML-escape *text*, turning ANSI colour codes into spans.
+
+    Terminal output reaches the transcript with its escape sequences intact -- /context
+    is the usual source -- and escaping it as plain text put the raw codes on the page.
+
+    The text is always escaped first; only the markup this function generates itself is
+    trusted, and that is built from parsed integers. Non-SGR sequences (cursor moves,
+    erase-line) carry nothing to show and are dropped.
+    """
+    if not text or "\x1b" not in text:
+        return html.escape(text or "")
+
+    parts = []
+    styles = {}
+    open_span = False
+    position = 0
+
+    def close():
+        nonlocal open_span
+        if open_span:
+            parts.append("</span>")
+            open_span = False
+
+    for match in ANSI_ESCAPE_RE.finditer(text):
+        chunk = text[position : match.start()]
+        if chunk:
+            parts.append(html.escape(chunk))
+        position = match.end()
+
+        if match.group(2) != "m":
+            continue  # not SGR: nothing to render
+        close()
+        _sgr_styles(match.group(1), styles)
+        if styles:
+            declarations = ";".join(f"{k}:{v}" for k, v in sorted(styles.items()))
+            parts.append(f'<span style="{declarations}">')
+            open_span = True
+
+    remainder = text[position:]
+    if remainder:
+        parts.append(html.escape(remainder))
+    close()
+    return "".join(parts)
+
+
 def render_markdown_text(text):
     if not text:
         return ""
@@ -790,7 +926,7 @@ def render_content_block(block):
                     # Add any content before this commit
                     before = content[last_end : match.start()].strip()
                     if before:
-                        parts.append(f"<pre>{html.escape(before)}</pre>")
+                        parts.append(f"<pre>{render_ansi_text(before)}</pre>")
 
                     commit_hash = match.group(1)
                     commit_msg = match.group(2)
@@ -802,11 +938,11 @@ def render_content_block(block):
                 # Add any remaining content after last commit
                 after = content[last_end:].strip()
                 if after:
-                    parts.append(f"<pre>{html.escape(after)}</pre>")
+                    parts.append(f"<pre>{render_ansi_text(after)}</pre>")
 
                 content_html = "".join(parts)
             else:
-                content_html = f"<pre>{html.escape(content)}</pre>"
+                content_html = f"<pre>{render_ansi_text(content)}</pre>"
         elif isinstance(content, list):
             # Handle tool result content that contains multiple blocks (text, images, etc.)
             parts = []
@@ -816,7 +952,7 @@ def render_content_block(block):
                     if item_type == "text":
                         text = item.get("text", "")
                         if text:
-                            parts.append(f"<pre>{html.escape(text)}</pre>")
+                            parts.append(f"<pre>{render_ansi_text(text)}</pre>")
                     elif item_type == "image":
                         source = item.get("source", {})
                         media_type = source.get("media_type", "image/png")

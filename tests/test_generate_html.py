@@ -1638,3 +1638,79 @@ class TestSearchFeature:
 
         # Total pages should be embedded for JS to know how many pages to fetch
         assert "totalPages" in index_html or "total_pages" in index_html
+
+
+class TestAnsiEscapeCodes:
+    """Terminal output reaching the transcript with its ANSI escape codes intact.
+
+    A command like /context writes colour with SGR sequences. Those arrived in the
+    JSONL verbatim and were escaped as literal text, so the rendered transcript read
+    "\x1b[1mContext Usage\x1b[22m ..." -- the output most worth reading was the least
+    readable thing on the page (issue #95).
+    """
+
+    def test_sgr_codes_are_not_shown_as_literal_text(self):
+        block = {
+            "type": "tool_result",
+            "content": "\x1b[1mContext Usage\x1b[22m done",
+        }
+        result = render_content_block(block)
+
+        assert "\x1b" not in result
+        assert "[1m" not in result
+        assert "[22m" not in result
+        assert "Context Usage" in result
+        assert "done" in result
+
+    def test_bold_becomes_markup_rather_than_being_discarded(self):
+        block = {"type": "tool_result", "content": "\x1b[1mloud\x1b[22m quiet"}
+        result = render_content_block(block)
+
+        assert "font-weight:bold" in result.replace(" ", "")
+        assert "loud" in result
+
+    def test_truecolor_is_carried_through(self):
+        # The exact form /context emits: 38;2;R;G;B
+        block = {
+            "type": "tool_result",
+            "content": "\x1b[38;2;136;136;136m dim \x1b[0mx",
+        }
+        result = render_content_block(block)
+
+        assert "#888888" in result
+
+    def test_256_colour_is_carried_through(self):
+        block = {"type": "tool_result", "content": "\x1b[38;5;196mred\x1b[0m"}
+        result = render_content_block(block)
+
+        assert "red" in result
+        assert "#" in result
+
+    def test_non_sgr_sequences_are_removed_entirely(self):
+        # Cursor movement and erase-line carry nothing worth rendering.
+        block = {"type": "tool_result", "content": "\x1b[2K\x1b[1Gprogress"}
+        result = render_content_block(block)
+
+        assert "\x1b" not in result
+        assert "2K" not in result
+        assert "progress" in result
+
+    def test_html_in_ansi_output_is_still_escaped(self):
+        """The reason this cannot just be marked safe."""
+        block = {
+            "type": "tool_result",
+            "content": "\x1b[1m<script>alert(1)</script>\x1b[22m",
+        }
+        result = render_content_block(block)
+
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+
+    def test_plain_output_is_unchanged(self):
+        """The control: text with no escape sequences must render exactly as before."""
+        block = {"type": "tool_result", "content": "just plain output"}
+
+        assert render_content_block(block) == render_content_block(
+            {"type": "tool_result", "content": "just plain output"}
+        )
+        assert "<span" not in render_content_block(block)
