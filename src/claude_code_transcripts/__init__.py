@@ -933,6 +933,53 @@ def format_tool_stats(tool_counts):
     return " · ".join(parts)
 
 
+TASK_NOTIFICATION_TAG = "<task-notification>"
+
+
+def is_task_notification(message_data):
+    """Whether this `user` entry is a background-task completion rather than a prompt.
+
+    A tool started with run_in_background=true reports back as a `type: user` entry whose
+    content is a plain string of XML, not the usual list of tool_result blocks -- so
+    is_tool_result_message() does not recognise it and it was rendered as if the human
+    had typed it.
+    """
+    content = message_data.get("content", "")
+    return isinstance(content, str) and content.lstrip().startswith(
+        TASK_NOTIFICATION_TAG
+    )
+
+
+def _task_notification_field(text, name):
+    match = re.search(rf"<{name}>(.*?)</{name}>", text, re.DOTALL)
+    return match.group(1).strip() if match else ""
+
+
+def render_task_notification(message_data):
+    """Render the notification's fields, falling back to the raw text if it is malformed.
+
+    Parsed with a regex rather than an XML parser because the payload is not guaranteed
+    well-formed -- a <summary> carries free text, which may itself contain markup. The
+    fallback still renders as a notification: a malformed one must not end up looking
+    like a human message again, which is the bug being fixed.
+    """
+    content = message_data.get("content", "").lstrip()
+    fields = {
+        name: _task_notification_field(content, name)
+        for name in ("task-id", "tool-use-id", "status", "summary", "result")
+    }
+    if not any(fields.values()):
+        return _macros.task_notification("", "", "", html.escape(content), "")
+
+    return _macros.task_notification(
+        fields["task-id"],
+        fields["tool-use-id"],
+        fields["status"],
+        html.escape(fields["summary"]),
+        html.escape(fields["result"]),
+    )
+
+
 def is_tool_result_message(message_data):
     """Check if a message contains only tool_result blocks."""
     content = message_data.get("content", [])
@@ -954,12 +1001,18 @@ def render_message(log_type, message_json, timestamp):
     except json.JSONDecodeError:
         return ""
     if log_type == "user":
-        content_html = render_user_message_content(message_data)
-        # Check if this is a tool result message
-        if is_tool_result_message(message_data):
-            role_class, role_label = "tool-reply", "Tool reply"
+        # A background task reporting back is not a prompt, so it is classified before
+        # the content is rendered as one.
+        if is_task_notification(message_data):
+            content_html = render_task_notification(message_data)
+            role_class, role_label = "task-notification", "Background task"
         else:
-            role_class, role_label = "user", "User"
+            content_html = render_user_message_content(message_data)
+            # Check if this is a tool result message
+            if is_tool_result_message(message_data):
+                role_class, role_label = "tool-reply", "Tool reply"
+            else:
+                role_class, role_label = "user", "User"
     elif log_type == "assistant":
         content_html = render_assistant_message(message_data)
         role_class, role_label = "assistant", "Assistant"
@@ -983,6 +1036,14 @@ h1 { font-size: 1.5rem; margin-bottom: 24px; padding-bottom: 8px; border-bottom:
 .message.user { background: var(--user-bg); border-left: 4px solid var(--user-border); }
 .message.assistant { background: var(--card-bg); border-left: 4px solid var(--assistant-border); }
 .message.tool-reply { background: #fff8e1; border-left: 4px solid #ff9800; }
+.message.task-notification { background: #eceff1; border-left: 4px solid #607d8b; }
+.task-notification .role-label { color: #455a64; }
+.task-notification-body { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; font-size: 0.9rem; }
+.task-status { text-transform: uppercase; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; padding: 2px 8px; border-radius: 10px; background: #cfd8dc; color: #37474f; }
+.task-status-completed { background: #c8e6c9; color: #1b5e20; }
+.task-status-failed { background: #ffcdd2; color: #b71c1c; }
+.task-meta { flex-basis: 100%; color: var(--text-muted); font-size: 0.8rem; }
+.task-result { flex-basis: 100%; margin: 4px 0 0 0; }
 .tool-reply .role-label { color: #e65100; }
 .tool-reply .tool-result { background: transparent; padding: 0; margin: 0; }
 .tool-reply .tool-result .truncatable.truncated::after { background: linear-gradient(to bottom, transparent, #fff8e1); }
