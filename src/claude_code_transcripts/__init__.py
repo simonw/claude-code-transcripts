@@ -113,7 +113,11 @@ def get_session_summary(filepath, max_length=200):
 
 
 def _get_jsonl_summary(filepath, max_length=200):
-    """Extract summary from JSONL file."""
+    """Extract summary from JSONL file, prioritizing AI-generated titles."""
+    ai_title = None
+    last_summary = None
+    first_user_prompt = None
+
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
@@ -122,40 +126,48 @@ def _get_jsonl_summary(filepath, max_length=200):
                     continue
                 try:
                     obj = json.loads(line)
-                    # First priority: summary type entries
-                    if obj.get("type") == "summary" and obj.get("summary"):
-                        summary = obj["summary"]
-                        if len(summary) > max_length:
-                            return summary[: max_length - 3] + "..."
-                        return summary
-                except json.JSONDecodeError:
-                    continue
+                    entry_type = obj.get("type")
 
-        # Second pass: find first non-meta user message
-        with open(filepath, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    if (
-                        obj.get("type") == "user"
+                    # 1. Höchste Priorität: Offizieller AI-Titel von Claude Code
+                    if entry_type == "ai-title" and obj.get("aiTitle"):
+                        ai_title = obj["aiTitle"]
+
+                    # 2. Zweite Priorität: AI-Summary Eintrag
+                    elif entry_type == "summary" and obj.get("summary"):
+                        last_summary = obj["summary"]
+
+                    # 3. Fallback: Erster echter User-Prompt (ohne System-Instruktionen)
+                    elif (
+                        not first_user_prompt
+                        and entry_type == "user"
                         and not obj.get("isMeta")
                         and obj.get("message", {}).get("content")
                     ):
                         content = obj["message"]["content"]
                         text = extract_text_from_content(content)
-                        if text and not text.startswith("<"):
-                            if len(text) > max_length:
-                                return text[: max_length - 3] + "..."
-                            return text
+                        if text:
+                            clean_text = text.strip()
+                            lines = [l.strip() for l in clean_text.split("\n") if l.strip()]
+                            for l in lines:
+                                l_lower = l.lower()
+                                if l_lower.startswith(("you are", "act as", "system:", "instructions:")):
+                                    continue
+                                if len(l) > 5 and not l.startswith(("/", ".")):
+                                    first_user_prompt = l
+                                    break
+                            if not first_user_prompt and lines:
+                                first_user_prompt = lines[-1]
                 except json.JSONDecodeError:
                     continue
     except Exception:
         pass
 
-    return "(no summary)"
+    # Auswahl nach Priorität
+    summary = ai_title or last_summary or first_user_prompt or "(no summary)"
+
+    if len(summary) > max_length:
+        return summary[: max_length - 3] + "..."
+    return summary
 
 
 def find_local_sessions(folder, limit=10):
