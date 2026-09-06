@@ -131,7 +131,7 @@ def _get_jsonl_summary(filepath, max_length=200):
                 except json.JSONDecodeError:
                     continue
 
-        # Second pass: find first non-meta user message
+        # Second pass: find first non-meta user or queued prompt
         with open(filepath, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -139,12 +139,22 @@ def _get_jsonl_summary(filepath, max_length=200):
                     continue
                 try:
                     obj = json.loads(line)
-                    if (
+                    is_user_prompt = (
                         obj.get("type") == "user"
                         and not obj.get("isMeta")
                         and obj.get("message", {}).get("content")
-                    ):
-                        content = obj["message"]["content"]
+                    )
+                    is_queued_prompt = (
+                        obj.get("type") == "queue-operation"
+                        and obj.get("operation") == "enqueue"
+                        and obj.get("content")
+                    )
+                    if is_user_prompt or is_queued_prompt:
+                        content = (
+                            obj["message"]["content"]
+                            if is_user_prompt
+                            else obj["content"]
+                        )
                         text = extract_text_from_content(content)
                         if text and not text.startswith("<"):
                             if len(text) > max_length:
@@ -476,6 +486,27 @@ def _parse_jsonl_file(filepath):
             try:
                 obj = json.loads(line)
                 entry_type = obj.get("type")
+
+                if (
+                    entry_type == "queue-operation"
+                    and obj.get("operation") == "enqueue"
+                ):
+                    content = obj.get("content")
+                    queued_text = extract_text_from_content(content)
+                    if not queued_text:
+                        continue
+                    loglines.append(
+                        {
+                            "type": "user",
+                            "timestamp": obj.get("timestamp", ""),
+                            "message": {
+                                "role": "user",
+                                "content": content,
+                                "isQueuedPrompt": True,
+                            },
+                        }
+                    )
+                    continue
 
                 # Skip non-message entries
                 if entry_type not in ("user", "assistant"):
@@ -958,6 +989,8 @@ def render_message(log_type, message_json, timestamp):
         # Check if this is a tool result message
         if is_tool_result_message(message_data):
             role_class, role_label = "tool-reply", "Tool reply"
+        elif message_data.get("isQueuedPrompt"):
+            role_class, role_label = "user queued", "Queued prompt"
         else:
             role_class, role_label = "user", "User"
     elif log_type == "assistant":

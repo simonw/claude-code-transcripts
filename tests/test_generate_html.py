@@ -213,7 +213,6 @@ class TestRenderContentBlock:
         # 200x200 black GIF - minimal valid GIF with black pixels
         # Generated with: from PIL import Image; img = Image.new('RGB', (200, 200), (0, 0, 0)); img.save('black.gif')
         import base64
-        import io
 
         # Create a minimal 200x200 black GIF using raw bytes
         # GIF89a header + logical screen descriptor + global color table + image data
@@ -574,7 +573,6 @@ class TestCreateGist:
     def test_creates_gist_successfully(self, output_dir, monkeypatch):
         """Test successful gist creation."""
         import subprocess
-        import click
 
         # Create test HTML files
         (output_dir / "index.html").write_text(
@@ -1133,6 +1131,114 @@ class TestParseSessionFile:
         user_msg = next(e for e in result["loglines"] if e["type"] == "user")
         assert user_msg["message"]["content"] == "Create a hello world function"
 
+    def test_jsonl_preserves_queued_prompt_and_later_user_delivery(
+        self, tmp_path, output_dir
+    ):
+        jsonl_file = tmp_path / "queued.jsonl"
+        entries = [
+            {
+                "type": "user",
+                "timestamp": "2026-04-23T04:59:00.000Z",
+                "message": {"role": "user", "content": "Start the work"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-04-23T04:59:10.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Working on it"}],
+                },
+            },
+            {
+                "type": "queue-operation",
+                "operation": "enqueue",
+                "timestamp": "2026-04-23T04:59:40.480Z",
+                "content": "Use red/green TDD",
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-04-23T04:59:50.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Finishing the first task"}],
+                },
+            },
+            {
+                "type": "queue-operation",
+                "operation": "dequeue",
+                "timestamp": "2026-04-23T05:00:00.000Z",
+            },
+            {
+                "type": "user",
+                "timestamp": "2026-04-23T05:00:01.000Z",
+                "message": {"role": "user", "content": "Use red/green TDD"},
+            },
+            {
+                "type": "assistant",
+                "timestamp": "2026-04-23T05:00:10.000Z",
+                "message": {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Using TDD"}],
+                },
+            },
+        ]
+        jsonl_file.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+
+        result = parse_session_file(jsonl_file)
+        queued = [
+            entry
+            for entry in result["loglines"]
+            if entry.get("message", {}).get("isQueuedPrompt")
+        ]
+        assert len(queued) == 1
+        assert queued[0]["timestamp"] == "2026-04-23T04:59:40.480Z"
+        delivered = [
+            entry
+            for entry in result["loglines"]
+            if entry.get("message", {}).get("content") == "Use red/green TDD"
+            and not entry["message"].get("isQueuedPrompt")
+        ]
+        assert len(delivered) == 1
+        assert delivered[0]["timestamp"] == "2026-04-23T05:00:01.000Z"
+
+        generate_html(jsonl_file, output_dir)
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert page_html.count("Use red/green TDD") == 2
+        assert "Queued prompt" in page_html
+        assert "2026-04-23T04:59:40.480Z" in page_html
+        assert "2026-04-23T05:00:01.000Z" in page_html
+        assert page_html.index("Working on it") < page_html.index("Use red/green TDD")
+        assert page_html.index("Use red/green TDD") < page_html.index(
+            "Finishing the first task"
+        )
+
+    def test_jsonl_preserves_queued_prompt_with_array_content(
+        self, tmp_path, output_dir
+    ):
+        jsonl_file = tmp_path / "queued-array.jsonl"
+        jsonl_file.write_text(
+            json.dumps(
+                {
+                    "type": "queue-operation",
+                    "operation": "enqueue",
+                    "timestamp": "2026-04-23T05:03:18.122Z",
+                    "content": [{"type": "text", "text": "Use the PDF.js renderer"}],
+                }
+            )
+            + "\n"
+        )
+
+        assert get_session_summary(jsonl_file) == "Use the PDF.js renderer"
+        result = parse_session_file(jsonl_file)
+        assert result["loglines"][0]["message"]["content"] == [
+            {"type": "text", "text": "Use the PDF.js renderer"}
+        ]
+
+        generate_html(jsonl_file, output_dir)
+        page_html = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert "Queued prompt" in page_html
+        assert "Use the PDF.js renderer" in page_html
+
     def test_jsonl_generates_html(self, output_dir, snapshot_html):
         """Test that JSONL files can be converted to HTML."""
         fixture_path = Path(__file__).parent / "sample_session.jsonl"
@@ -1416,7 +1522,6 @@ class TestOutputAutoOption:
         """Test that json -a uses current directory when -o not specified."""
         from click.testing import CliRunner
         from claude_code_transcripts import cli
-        import os
 
         fixture_path = Path(__file__).parent / "sample_session.json"
 
