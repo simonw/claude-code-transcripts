@@ -704,6 +704,17 @@ def render_markdown_text(text):
     return markdown.markdown(text, extensions=["fenced_code", "tables"])
 
 
+def render_user_text(text):
+    """Render a user prompt as the plain text that was typed.
+
+    Prompts often contain pasted code or config, where # starts a comment
+    rather than a heading, so they are not rendered as Markdown.
+    """
+    if not text:
+        return ""
+    return f'<p class="user-text">{html.escape(text)}</p>'
+
+
 def is_json_like(text):
     if not text or not isinstance(text, str):
         return False
@@ -840,14 +851,20 @@ def render_content_block(block):
         return format_json(block)
 
 
+def render_user_content_block(block):
+    if isinstance(block, dict) and block.get("type") == "text":
+        return _macros.user_content(render_user_text(block.get("text", "")))
+    return render_content_block(block)
+
+
 def render_user_message_content(message_data):
     content = message_data.get("content", "")
     if isinstance(content, str):
         if is_json_like(content):
             return _macros.user_content(format_json(content))
-        return _macros.user_content(render_markdown_text(content))
+        return _macros.user_content(render_user_text(content))
     elif isinstance(content, list):
-        return "".join(render_content_block(block) for block in content)
+        return "".join(render_user_content_block(block) for block in content)
     return f"<p>{html.escape(str(content))}</p>"
 
 
@@ -1046,6 +1063,7 @@ pre.json { color: #e0e0e0; }
 code { background: rgba(0,0,0,0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
 pre code { background: none; padding: 0; }
 .user-content { margin: 0; }
+.user-text { margin: 0; white-space: pre-wrap; }
 .truncatable { position: relative; }
 .truncatable.truncated .truncatable-content { max-height: 200px; overflow: hidden; }
 .truncatable.truncated::after { content: ''; position: absolute; bottom: 32px; left: 0; right: 0; height: 60px; background: linear-gradient(to bottom, transparent, var(--card-bg)); pointer-events: none; }
@@ -1413,7 +1431,7 @@ def generate_html(json_path, output_dir, github_repo=None):
         page_num = (i // PROMPTS_PER_PAGE) + 1
         msg_id = make_msg_id(conv["timestamp"])
         link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
+        rendered_content = render_user_text(conv["user_text"])
 
         # Collect all messages including from subsequent continuation conversations
         # This ensures long_texts from continuations appear with the original prompt
@@ -1887,7 +1905,7 @@ def generate_html_from_session_data(session_data, output_dir, github_repo=None):
         page_num = (i // PROMPTS_PER_PAGE) + 1
         msg_id = make_msg_id(conv["timestamp"])
         link = f"page-{page_num:03d}.html#{msg_id}"
-        rendered_content = render_markdown_text(conv["user_text"])
+        rendered_content = render_user_text(conv["user_text"])
 
         # Collect all messages including from subsequent continuation conversations
         # This ensures long_texts from continuations appear with the original prompt

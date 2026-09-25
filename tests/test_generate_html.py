@@ -117,6 +117,54 @@ class TestGenerateHtml:
         # The page file should exist
         assert (output_dir / "page-001.html").exists()
 
+    def test_user_prompts_are_rendered_as_plain_text(self, tmp_path):
+        """User prompts often contain pasted code or config where # is a comment.
+
+        They should be shown as typed, not rendered as Markdown. See #35.
+        """
+        prompt = "# config comment\nkey = *value*\n<b>tag</b>"
+        user_lines = [
+            {"type": "user", "message": {"role": "user", "content": prompt}},
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "text", "text": prompt}],
+                },
+            },
+        ]
+        jsonl_file = tmp_path / "session.jsonl"
+        lines = []
+        for user_line in user_lines:
+            lines.append(json.dumps(user_line))
+            lines.append(
+                json.dumps(
+                    {
+                        "type": "assistant",
+                        "message": {
+                            "role": "assistant",
+                            "content": [{"type": "text", "text": "# Heading"}],
+                        },
+                    }
+                )
+            )
+        jsonl_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        generate_html(jsonl_file, output_dir)
+
+        escaped = "# config comment\nkey = *value*\n&lt;b&gt;tag&lt;/b&gt;"
+        for name in ("index.html", "page-001.html"):
+            page = (output_dir / name).read_text(encoding="utf-8")
+            assert "<h1>config comment</h1>" not in page
+            assert "<em>value</em>" not in page
+            assert "<b>tag</b>" not in page
+            assert page.count(escaped) == 2
+        # Assistant text is still rendered as Markdown
+        page = (output_dir / "page-001.html").read_text(encoding="utf-8")
+        assert "<h1>Heading</h1>" in page
+
 
 class TestRenderFunctions:
     """Tests for individual render functions."""
