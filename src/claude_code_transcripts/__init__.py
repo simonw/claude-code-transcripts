@@ -464,6 +464,28 @@ def parse_session_file(filepath):
             return json.load(f)
 
 
+def _queued_user_prompt(obj):
+    """Return a user entry for a prompt queued while Claude was working, else None."""
+    if obj.get("type") != "attachment":
+        return None
+    attachment = obj.get("attachment") or {}
+    if attachment.get("type") != "queued_command":
+        return None
+    if attachment.get("commandMode") != "prompt":
+        return None
+    origin = attachment.get("origin")
+    if isinstance(origin, dict) and origin.get("kind") not in (None, "human"):
+        return None
+    prompt = attachment.get("prompt")
+    if not isinstance(prompt, str) or not prompt.strip():
+        return None
+    return {
+        "type": "user",
+        "timestamp": attachment.get("timestamp") or obj.get("timestamp", ""),
+        "message": {"role": "user", "content": prompt},
+    }
+
+
 def _parse_jsonl_file(filepath):
     """Parse JSONL file and convert to standard format."""
     loglines = []
@@ -476,6 +498,15 @@ def _parse_jsonl_file(filepath):
             try:
                 obj = json.loads(line)
                 entry_type = obj.get("type")
+
+                # A prompt typed while Claude is working is stored as a
+                # queued_command attachment and absorbed into the running turn;
+                # no separate "user" line is written for it. Keep human prompts,
+                # skip other queued commands such as task notifications.
+                queued = _queued_user_prompt(obj)
+                if queued is not None:
+                    loglines.append(queued)
+                    continue
 
                 # Skip non-message entries
                 if entry_type not in ("user", "assistant"):
