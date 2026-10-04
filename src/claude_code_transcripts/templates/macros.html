@@ -71,7 +71,7 @@
 {% macro write_tool(file_path, content, tool_id) %}
 {%- set filename = file_path.split('/')[-1] if '/' in file_path else file_path -%}
 <div class="file-tool write-tool" data-tool-id="{{ tool_id }}">
-<div class="file-tool-header write-header"><span class="file-tool-icon">📝</span> Write <span class="file-tool-path">{{ filename }}</span></div>
+<div class="file-tool-header write-header"><span>&#128221;</span> Write <span class="file-tool-path">{{ filename }}</span></div>
 <div class="file-tool-fullpath">{{ file_path }}</div>
 <div class="truncatable"><div class="truncatable-content"><pre class="file-content">{{ content }}</pre></div><button class="expand-btn">Show more</button></div>
 </div>
@@ -81,10 +81,10 @@
 {% macro edit_tool(file_path, old_string, new_string, replace_all, tool_id) %}
 {%- set filename = file_path.split('/')[-1] if '/' in file_path else file_path -%}
 <div class="file-tool edit-tool" data-tool-id="{{ tool_id }}">
-<div class="file-tool-header edit-header"><span class="file-tool-icon">✏️</span> Edit <span class="file-tool-path">{{ filename }}</span>{% if replace_all %} <span class="edit-replace-all">(replace all)</span>{% endif %}</div>
+<div class="file-tool-header edit-header"><span>&#9998;</span> Edit <span class="file-tool-path">{{ filename }}</span>{% if replace_all %} <span class="edit-replace-all">(replace all)</span>{% endif %}</div>
 <div class="file-tool-fullpath">{{ file_path }}</div>
 <div class="truncatable"><div class="truncatable-content">
-<div class="edit-section edit-old"><div class="edit-label">−</div><pre class="edit-content">{{ old_string }}</pre></div>
+<div class="edit-section edit-old"><div class="edit-label">&#8722;</div><pre class="edit-content">{{ old_string }}</pre></div>
 <div class="edit-section edit-new"><div class="edit-label">+</div><pre class="edit-content">{{ new_string }}</pre></div>
 </div><button class="expand-btn">Show more</button></div>
 </div>
@@ -92,22 +92,16 @@
 
 {# Bash tool #}
 {% macro bash_tool(command, description, tool_id) %}
-<div class="tool-use bash-tool" data-tool-id="{{ tool_id }}">
-<div class="tool-header"><span class="tool-icon">$</span> Bash</div>
-{%- if description %}
-<div class="tool-description">{{ description }}</div>
-{%- endif -%}
-<div class="truncatable"><div class="truncatable-content"><pre class="bash-command">{{ command }}</pre></div><button class="expand-btn">Show more</button></div>
-</div>
+<details class="tool-use bash-tool" data-tool-id="{{ tool_id }}"><summary><span>$</span><span class="tool-name">Bash</span><code class="tool-chip">{{ command[:80] }}{% if command|length > 80 %}&#8230;{% endif %}</code><span class="chevron">&#9662;</span></summary><div class="tool-body">
+{%- if description %}<div class="tool-description">{{ description }}</div>{% endif -%}
+<div class="truncatable"><div class="truncatable-content"><pre class="bash-command">{{ command }}</pre></div><button class="expand-btn">Show more</button></div></div></details>
 {%- endmacro %}
 
 {# Generic tool use - input_json is pre-formatted so needs |safe #}
 {% macro tool_use(tool_name, description, input_json, tool_id) %}
-<div class="tool-use" data-tool-id="{{ tool_id }}"><div class="tool-header"><span class="tool-icon">⚙</span> {{ tool_name }}</div>
-{%- if description -%}
-<div class="tool-description">{{ description }}</div>
-{%- endif -%}
-<div class="truncatable"><div class="truncatable-content"><pre class="json">{{ input_json }}</pre></div><button class="expand-btn">Show more</button></div></div>
+<details class="tool-use" data-tool-id="{{ tool_id }}"><summary><span>&#9881;</span><span class="tool-name">{{ tool_name }}</span><span class="chevron">&#9662;</span></summary><div class="tool-body">
+{%- if description -%}<div class="tool-description">{{ description }}</div>{%- endif -%}
+<div class="truncatable"><div class="truncatable-content"><pre class="json">{{ input_json }}</pre></div><button class="expand-btn">Show more</button></div></div></details>
 {%- endmacro %}
 
 {# Tool result - content_html is pre-rendered so needs |safe #}
@@ -123,7 +117,7 @@
 
 {# Thinking block - content_html is pre-rendered markdown so needs |safe #}
 {% macro thinking(content_html) %}
-<div class="thinking"><div class="thinking-label">Thinking</div>{{ content_html|safe }}</div>
+<details class="thinking"><summary>Thinking&#8230;<span class="chevron">&#9662;</span></summary><div class="thinking-body">{{ content_html|safe }}</div></details>
 {%- endmacro %}
 
 {# Assistant text - content_html is pre-rendered markdown so needs |safe #}
@@ -153,7 +147,13 @@
 
 {# Message wrapper - content_html is pre-rendered so needs |safe #}
 {% macro message(role_class, role_label, msg_id, timestamp, content_html) %}
-<div class="message {{ role_class }}" id="{{ msg_id }}"><div class="message-header"><span class="role-label">{{ role_label }}</span><a href="#{{ msg_id }}" class="timestamp-link"><time datetime="{{ timestamp }}" data-timestamp="{{ timestamp }}">{{ timestamp }}</time></a></div><div class="message-content">{{ content_html|safe }}</div></div>
+{%- if role_class == 'tool-reply' -%}
+<div class="msg-row tool-reply" id="{{ msg_id }}"><div class="tool-reply-label">Result</div>{{ content_html|safe }}</div>
+{%- elif role_class == 'assistant' -%}
+<div class="msg-row assistant" id="{{ msg_id }}"><div class="avatar"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg"><line x1="10" y1="3" x2="10" y2="8" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="14.2" y1="4.4" x2="11.8" y2="8.6" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="16.6" y1="7.8" x2="12.4" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="16.6" y1="12.2" x2="12.4" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="14.2" y1="15.6" x2="11.8" y2="11.4" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="10" y1="17" x2="10" y2="12" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="5.8" y1="15.6" x2="8.2" y2="11.4" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="3.4" y1="12.2" x2="7.6" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="3.4" y1="7.8" x2="7.6" y2="10" stroke="white" stroke-width="2" stroke-linecap="round"/><line x1="5.8" y1="4.4" x2="8.2" y2="8.6" stroke="white" stroke-width="2" stroke-linecap="round"/></svg></div><div class="msg-body">{{ content_html|safe }}<div class="msg-meta"><a href="#{{ msg_id }}" class="timestamp-link"><time datetime="{{ timestamp }}" data-timestamp="{{ timestamp }}">{{ timestamp }}</time></a></div></div></div>
+{%- else -%}
+<div class="msg-row user" id="{{ msg_id }}"><div><div class="user-bubble">{{ content_html|safe }}</div><div class="msg-meta"><a href="#{{ msg_id }}" class="timestamp-link"><time datetime="{{ timestamp }}" data-timestamp="{{ timestamp }}">{{ timestamp }}</time></a></div></div></div>
+{%- endif %}
 {%- endmacro %}
 
 {# Continuation wrapper - content_html is pre-rendered so needs |safe #}

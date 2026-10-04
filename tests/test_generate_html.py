@@ -1,7 +1,9 @@
 """Tests for HTML generation from Claude Code session JSON."""
 
 import json
+import re
 import tempfile
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -27,6 +29,7 @@ from claude_code_transcripts import (
     parse_session_file,
     get_session_summary,
     find_local_sessions,
+    _macros,
 )
 
 
@@ -1178,6 +1181,43 @@ class TestGetSessionSummary:
         assert summary.endswith("...")
 
 
+class TestMessageMacro:
+    """Tests for the message macro's structural output."""
+
+    def test_assistant_message_has_avatar(self):
+        result = _macros.message(
+            "assistant", "Assistant", "msg-1", "2024-01-01T10:00:00", "<p>Hi</p>"
+        )
+        assert 'class="avatar"' in result
+
+    def test_user_message_has_bubble(self):
+        result = _macros.message(
+            "user", "User", "msg-1", "2024-01-01T10:00:00", "<p>Hi</p>"
+        )
+        assert 'class="user-bubble"' in result
+
+    def test_tool_reply_has_no_bubble(self):
+        result = _macros.message(
+            "tool-reply", "Tool reply", "msg-1", "2024-01-01T10:00:00", "<p>output</p>"
+        )
+        assert 'class="user-bubble"' not in result
+        assert 'class="avatar"' not in result
+
+    def test_thinking_uses_details(self):
+        result = _macros.thinking("<p>some thought</p>")
+        assert "<details" in result
+
+    def test_bash_tool_uses_details(self):
+        result = _macros.bash_tool("pytest tests/ -v", "Run tests", "tool-1")
+        assert "<details" in result
+
+    def test_tool_use_uses_details(self):
+        result = _macros.tool_use(
+            "WebFetch", "Fetch a URL", '{"url": "https://example.com"}', "tool-1"
+        )
+        assert "<details" in result
+
+
 class TestFindLocalSessions:
     """Tests for find_local_sessions which discovers local JSONL files."""
 
@@ -1563,6 +1603,42 @@ class TestOutputAutoOption:
 
 class TestSearchFeature:
     """Tests for the search feature on index.html pages."""
+
+    def test_search_selector_matches_generated_messages(self, output_dir):
+        """Search must select every message wrapper, including tool replies."""
+        fixture_path = Path(__file__).parent / "sample_session.json"
+        generate_html(fixture_path, output_dir, github_repo="example/project")
+        index_html = (output_dir / "index.html").read_text(encoding="utf-8")
+        selector = re.search(
+            r"var messages = doc\.querySelectorAll\(['\"]\.([\w-]+)['\"]\)",
+            index_html,
+        )
+        assert selector is not None
+        message_class = selector.group(1)
+
+        class MessageParser(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.messages = []
+                self.selected = []
+
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                classes = attrs.get("class", "").split()
+                if attrs.get("id", "").startswith("msg-"):
+                    self.messages.append(attrs)
+                if message_class in classes:
+                    self.selected.append(attrs)
+
+        roles = set()
+        for page in sorted(output_dir.glob("page-*.html")):
+            parser = MessageParser()
+            parser.feed(page.read_text(encoding="utf-8"))
+            assert parser.messages
+            assert parser.selected == parser.messages
+            for message in parser.selected:
+                roles.update(message["class"].split())
+        assert {"user", "assistant", "tool-reply"} <= roles
 
     def test_search_box_in_index_html(self, output_dir):
         """Test that search box is present in index.html."""

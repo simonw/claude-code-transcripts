@@ -145,7 +145,7 @@
         var resultsFromPage = 0;
 
         // Find all message blocks
-        var messages = doc.querySelectorAll('.message');
+        var messages = doc.querySelectorAll('.msg-row');
         messages.forEach(function(msg) {
             var text = msg.textContent || '';
             if (text.toLowerCase().indexOf(query.toLowerCase()) !== -1) {
