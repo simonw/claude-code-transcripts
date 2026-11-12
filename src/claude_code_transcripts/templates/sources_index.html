@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Claude Code Archive{% endblock %}
+{% block content %}
+        <h1>Claude Code Archive</h1>
+        <h2>Sources</h2>
+        {% for label, directory in sources %}
+        <div class="index-item">
+            <a href="{{ directory }}/index.html">
+                <div class="index-item-header">
+                    <span class="index-item-number">{{ label }}</span>
+                </div>
+            </a>
+        </div>
+        {% endfor %}
+{%- endblock %}
