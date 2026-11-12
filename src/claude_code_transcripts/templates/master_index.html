@@ -3,12 +3,12 @@
 {% block title %}Claude Code Archive{% endblock %}
 
 {% block content %}
-        <h1>Claude Code Archive</h1>
+        <h1>{% if source_label %}<a href="../index.html">Claude Code Archive</a> / {{ source_label }}{% else %}Claude Code Archive{% endif %}</h1>
         <p style="color: var(--text-muted); margin-bottom: 24px;">{{ total_projects }} projects · {{ total_sessions }} sessions</p>
 
         {% for project in projects %}
         <div class="index-item">
-            <a href="{{ project.name }}/index.html">
+            <a href="{{ project.name|urlencode }}/index.html">
                 <div class="index-item-header">
                     <span class="index-item-number">{{ project.name }}</span>
                     <time>{{ project.recent_date }}</time>

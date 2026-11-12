@@ -70,7 +70,16 @@ claude-code-transcripts
 claude-code-transcripts local
 ```
 
-Use `--limit` to control how many sessions are shown (default: 10):
+Both `local` and `all` use `$CLAUDE_CONFIG_DIR/projects` when `CLAUDE_CONFIG_DIR` is set.
+Pass `-s` or `--source` to select a projects directory explicitly. Repeat it to browse
+multiple profiles together:
+
+```bash
+claude-code-transcripts -s ~/.claude/projects -s ~/.claude-personal/projects
+```
+
+The picker groups sessions by source. Use `--limit` to control how many recent sessions
+are shown per source (default 10):
 
 ```bash
 claude-code-transcripts local --limit 20
@@ -188,7 +197,7 @@ This creates a directory structure with:
 
 Options:
 
-- `-s, --source DIRECTORY` - source directory (default: `~/.claude/projects`)
+- `-s, --source DIRECTORY` - projects directory, repeatable (default: `$CLAUDE_CONFIG_DIR/projects` if set, otherwise `~/.claude/projects`)
 - `-o, --output DIRECTORY` - output directory (default: `./claude-archive`)
 - `--include-agents` - include agent session files (excluded by default)
 - `--dry-run` - show what would be converted without creating files
@@ -203,6 +212,9 @@ claude-code-transcripts all --dry-run
 
 # Convert all sessions and open in browser
 claude-code-transcripts all --open
+
+# Build one index linking to a separate project archive for each source
+claude-code-transcripts all -s ~/.claude/projects -s ~/.claude-personal/projects
 
 # Convert to a specific directory
 claude-code-transcripts all -o ./my-archive

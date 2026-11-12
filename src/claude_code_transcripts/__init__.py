@@ -1,5 +1,6 @@
 """Convert Claude Code session JSON to a clean mobile-friendly HTML page with pagination."""
 
+import hashlib
 import json
 import html
 import os
@@ -322,12 +323,12 @@ def generate_batch_html(
 
     Returns statistics dict with total_projects, total_sessions, failed_sessions, output_dir.
     """
-    source_folder = Path(source_folder)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Find all sessions
     projects = find_all_sessions(source_folder, include_agents=include_agents)
+    return _write_batch_html(projects, Path(output_dir), progress_callback)
+
+
+def _write_batch_html(projects, output_dir, progress_callback, source_label=None):
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Calculate total for progress tracking
     total_session_count = sum(len(p["sessions"]) for p in projects)
@@ -370,7 +371,7 @@ def generate_batch_html(
         _generate_project_index(project, project_dir)
 
     # Generate master index
-    _generate_master_index(projects, output_dir)
+    _generate_master_index(projects, output_dir, source_label)
 
     return {
         "total_projects": len(projects),
@@ -409,7 +410,7 @@ def _generate_project_index(project, output_dir):
     output_path.write_text(html_content, encoding="utf-8")
 
 
-def _generate_master_index(projects, output_dir):
+def _generate_master_index(projects, output_dir, source_label):
     """Generate master index.html listing all projects."""
     template = get_template("master_index.html")
 
@@ -438,6 +439,7 @@ def _generate_master_index(projects, output_dir):
 
     html_content = template.render(
         projects=projects_data,
+        source_label=source_label,
         total_projects=len(projects),
         total_sessions=total_sessions,
         css=CSS,
@@ -1477,7 +1479,27 @@ def cli():
     pass
 
 
+source_option = click.option(
+    "-s",
+    "--source",
+    "sources",
+    multiple=True,
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Projects directory (repeatable). Defaults to $CLAUDE_CONFIG_DIR/projects or ~/.claude/projects.",
+)
+
+
+def project_sources(sources):
+    if sources:
+        return list(dict.fromkeys(source.resolve() for source in sources))
+    config = os.environ.get("CLAUDE_CONFIG_DIR")
+    return [
+        (Path(config).expanduser() if config else Path.home() / ".claude") / "projects"
+    ]
+
+
 @cli.command("local")
+@source_option
 @click.option(
     "-o",
     "--output",
@@ -1514,36 +1536,37 @@ def cli():
 @click.option(
     "--limit",
     default=10,
-    help="Maximum number of sessions to show (default: 10)",
+    type=click.IntRange(min=0),
+    help="Maximum number of sessions to show per source (default: 10)",
 )
-def local_cmd(output, output_auto, repo, gist, include_json, open_browser, limit):
+def local_cmd(
+    sources, output, output_auto, repo, gist, include_json, open_browser, limit
+):
     """Select and convert a local Claude Code session to HTML."""
-    projects_folder = Path.home() / ".claude" / "projects"
-
-    if not projects_folder.exists():
-        click.echo(f"Projects folder not found: {projects_folder}")
-        click.echo("No local Claude Code sessions available.")
-        return
-
+    sources = project_sources(sources)
     click.echo("Loading local sessions...")
-    results = find_local_sessions(projects_folder, limit=limit)
+    choices = []
+    for source in sources:
+        if not source.is_dir():
+            click.echo(f"Projects folder not found: {source}")
+            continue
+        results = find_local_sessions(source, limit=limit)
+        if results and len(sources) > 1:
+            choices.append(questionary.Separator(str(source)))
+        for filepath, summary in results:
+            stat = filepath.stat()
+            mod_time = datetime.fromtimestamp(stat.st_mtime)
+            size_kb = stat.st_size / 1024
+            date_str = mod_time.strftime("%Y-%m-%d %H:%M")
+            # Truncate summary if too long
+            if len(summary) > 50:
+                summary = summary[:47] + "..."
+            display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
+            choices.append(questionary.Choice(title=display, value=filepath))
 
-    if not results:
+    if not choices:
         click.echo("No local sessions found.")
         return
-
-    # Build choices for questionary
-    choices = []
-    for filepath, summary in results:
-        stat = filepath.stat()
-        mod_time = datetime.fromtimestamp(stat.st_mtime)
-        size_kb = stat.st_size / 1024
-        date_str = mod_time.strftime("%Y-%m-%d %H:%M")
-        # Truncate summary if too long
-        if len(summary) > 50:
-            summary = summary[:47] + "..."
-        display = f"{date_str}  {size_kb:5.0f} KB  {summary}"
-        choices.append(questionary.Choice(title=display, value=filepath))
 
     selected = questionary.select(
         "Select a session to convert:",
@@ -2096,13 +2119,17 @@ def web_cmd(
         webbrowser.open(index_url)
 
 
+def archive_source_label(source, sources):
+    """Use the shortest path suffix that identifies this projects directory."""
+    for length in range(1, len(source.parts) + 1):
+        suffix = source.parts[-length:]
+        if all(other == source or other.parts[-length:] != suffix for other in sources):
+            return str(Path(*suffix))
+    return str(source)
+
+
 @cli.command("all")
-@click.option(
-    "-s",
-    "--source",
-    type=click.Path(exists=True),
-    help="Source directory containing Claude projects (default: ~/.claude/projects).",
-)
+@source_option
 @click.option(
     "-o",
     "--output",
@@ -2132,7 +2159,7 @@ def web_cmd(
     is_flag=True,
     help="Suppress all output except errors.",
 )
-def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
+def all_cmd(sources, output, include_agents, dry_run, open_browser, quiet):
     """Convert all local Claude Code sessions to a browsable HTML archive.
 
     Creates a directory structure with:
@@ -2140,22 +2167,17 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
     - Per-project pages listing sessions
     - Individual session transcripts
     """
-    # Default source folder
-    if source is None:
-        source = Path.home() / ".claude" / "projects"
-    else:
-        source = Path(source)
-
-    if not source.exists():
-        raise click.ClickException(f"Source directory not found: {source}")
-
+    sources = project_sources(sources)
     output = Path(output)
+    groups = {}
+    for source in sources:
+        if not source.is_dir():
+            raise click.ClickException(f"Source directory not found: {source}")
+        if not quiet:
+            click.echo(f"Scanning {source}...")
+        groups[source] = find_all_sessions(source, include_agents=include_agents)
 
-    if not quiet:
-        click.echo(f"Scanning {source}...")
-
-    projects = find_all_sessions(source, include_agents=include_agents)
-
+    projects = [project for group in groups.values() for project in group]
     if not projects:
         if not quiet:
             click.echo("No sessions found.")
@@ -2171,17 +2193,20 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         # Dry-run always outputs (it's the point of dry-run), but respects --quiet
         if not quiet:
             click.echo("\nDry run - would convert:")
-            for project in projects:
-                click.echo(
-                    f"\n  {project['name']} ({len(project['sessions'])} sessions)"
-                )
-                for session in project["sessions"][:3]:  # Show first 3
-                    mod_time = datetime.fromtimestamp(session["mtime"])
+            for source, group in groups.items():
+                if len(groups) > 1:
+                    click.echo(str(source))
+                for project in group:
                     click.echo(
-                        f"    - {session['path'].stem} ({mod_time.strftime('%Y-%m-%d')})"
+                        f"\n  {project['name']} ({len(project['sessions'])} sessions)"
                     )
-                if len(project["sessions"]) > 3:
-                    click.echo(f"    ... and {len(project['sessions']) - 3} more")
+                    for session in project["sessions"][:3]:  # Show first 3
+                        mod_time = datetime.fromtimestamp(session["mtime"])
+                        click.echo(
+                            f"    - {session['path'].stem} ({mod_time.strftime('%Y-%m-%d')})"
+                        )
+                    if len(project["sessions"]) > 3:
+                        click.echo(f"    ... and {len(project['sessions']) - 3} more")
         return
 
     if not quiet:
@@ -2192,26 +2217,35 @@ def all_cmd(source, output, include_agents, dry_run, open_browser, quiet):
         if not quiet and current % 10 == 0:
             click.echo(f"  Processed {current}/{total} sessions...")
 
-    # Generate the archive using the library function
-    stats = generate_batch_html(
-        source,
-        output,
-        include_agents=include_agents,
-        progress_callback=on_progress,
-    )
-
-    # Report any failures
-    if stats["failed_sessions"]:
-        click.echo(f"\nWarning: {len(stats['failed_sessions'])} session(s) failed:")
-        for failure in stats["failed_sessions"]:
+    source_links = []
+    successful_sessions = 0
+    for source, group in groups.items():
+        destination = output
+        label = None
+        if len(groups) > 1:
+            # Keep source links stable when the order of CLI arguments changes.
+            key = hashlib.sha256(os.fsencode(source.resolve())).hexdigest()[:16]
+            destination = output / f"source-{key}"
+            label = archive_source_label(source, sources)
+            source_links.append((label, destination.name))
+        stats = _write_batch_html(group, destination, on_progress, label)
+        successful_sessions += stats["total_sessions"]
+        if stats["failed_sessions"]:
             click.echo(
-                f"  {failure['project']}/{failure['session']}: {failure['error']}"
+                f"\nWarning: {len(stats['failed_sessions'])} session(s) failed in {source}:"
             )
+            for failure in stats["failed_sessions"]:
+                click.echo(
+                    f"  {failure['project']}/{failure['session']}: {failure['error']}"
+                )
+
+    if source_links:
+        index = get_template("sources_index.html").render(sources=source_links, css=CSS)
+        (output / "index.html").write_text(index, encoding="utf-8")
 
     if not quiet:
         click.echo(
-            f"\nGenerated archive with {stats['total_projects']} projects, "
-            f"{stats['total_sessions']} sessions"
+            f"\nGenerated archive with {len(projects)} projects, {successful_sessions} sessions"
         )
         click.echo(f"Output: {output.resolve()}")
 

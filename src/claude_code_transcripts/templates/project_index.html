@@ -8,7 +8,7 @@
 
         {% for session in sessions %}
         <div class="index-item">
-            <a href="{{ session.name }}/index.html">
+            <a href="{{ session.name|urlencode }}/index.html">
                 <div class="index-item-header">
                     <span class="index-item-number">{{ session.date }}</span>
                     <span style="color: var(--text-muted);">{{ "%.0f"|format(session.size_kb) }} KB</span>
